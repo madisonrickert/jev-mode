@@ -301,54 +301,131 @@ def latest_per_project(full_only=False):
         if p.parent.name not in best or key > best[p.parent.name][0]: best[p.parent.name] = (key, p)
     return {k: v[1] for k, v in best.items()}
 
-def export_page(p):
+FACT_LINE = re.compile(r"^\s*[-*]\s*\**F(\d+)\**\s*(.*?)\s*\**\s*(?:—|--)\s*\**(yes|no|n\.a\.|n/a|unknown)\**[.,:]?\s*(.*)$", re.I)
+FIX_ONLY = {12, 14, 23}
+CODE_EXT = r"py|pyi|ts|tsx|js|jsx|mjs|cjs|rb|go|rs|java|kt|php|swift|ex|sh|md|json|html|css|yml|yaml|toml"
+DOC_SLUG = re.compile(r"`((?:concepts|primitives|cookbooks|patterns|model-jaggedness|introduction|sdk)/[\w/.-]+|primitives|models|confidence|patterns|cookbooks)`")
+
+def fact_rows(t):
+    """[(n, name, value, finding)] in fact order, from a rating's Facts section."""
+    rows = []
+    for line in section(t, "Facts").splitlines():
+        m = FACT_LINE.match(line)
+        if m: rows.append((int(m.group(1)), m.group(2).strip(" *"), m.group(3).lower().replace("n/a", "n.a."), m.group(4).strip()))
+    return rows
+
+def linkify(text, d):
+    """file:line refs become links to the project at its rated commit; docs slugs become TypeSafe links."""
+    url, commit = d.get("url", "").rstrip("/"), d.get("commit", "").split()[0] if d.get("commit") else ""
+    if re.match(r"https://github\.com/[^/]+/[^/]+$", url) and re.fullmatch(r"[0-9a-f]{7,40}", commit):
+        def ln(m):
+            path, a, b = m.group("p"), m.group("a"), m.group("b")
+            anchor = f"#L{a}" + (f"-L{b}" if b else "")
+            return f"[`{path}:{a}{'-' + b if b else ''}`]({url}/blob/{commit}/{path}{anchor})"
+        text = re.sub(r"(?<!\[)`?(?P<p>[\w./-]+\.(?:" + CODE_EXT + r")):(?P<a>\d+)(?:-(?P<b>\d+))?`?", ln, text)
+    return DOC_SLUG.sub(lambda m: f"[`{m.group(1)}`](https://docs.typesafe.ai/{m.group(1)})", text)
+
+def cell(x): return x.replace("|", "/").replace("\n", " ")
+
+def verdict_label(t, v):
+    if v == "1":
+        for lab in ("False marketing: Jev in name only", "Not a Jev integration"):
+            if lab.lower() in t.lower(): return lab
+    return VERDICT_LABEL.get(v, v)
+
+def minor_fact(n, finding, name):
+    """Fix-only facts: never lower a verdict (F12, F14, F23; F20/F22 below very high stakes)."""
+    return n in FIX_ONLY or (n in (20, 22) and "very high" not in finding.lower()) or "fix-only" in (name + finding).lower()
+
+def why_line(t, d):
+    if d.get("why"): return d["why"].strip()
+    s = section(t, "Summary").strip()
+    m = re.match(r"(.+?[.!?])(\s|$)", s, re.S)
+    return (m.group(1) if m else s).replace("\n", " ").strip()
+
+def dots(x):
+    return "●" * int(x) + "○" * (3 - int(x)) if str(x).isdigit() else "n.a."
+
+def export_pages(p):
+    """-> (detail page, full page, front matter, rubric, why) for one rating."""
     t = p.read_text(errors="ignore"); d = front_text(t); v = d.get("verdict", "").split()[0] if d.get("verdict") else ""
     r = d.get("rubric", "").split(); r = r[0] if r else ""
-    out = [f"# {d.get('project', p.parent.name)}", "",
-           f"**Verdict {v}: {VERDICT_LABEL.get(v, v)}.** Rated {d.get('rated', '')} at {d.get('commit', 'unrecorded')}.",
-           f"Project: {d.get('url', '')}"]
-    if r < RUBRIC: out += ["", f"*Earlier rubric ({r or 'unrecorded'}): the rubric has changed since this rating.*"]
-    out += ["", "## Summary", "", section(t, "Summary").strip(), "", "## Failed facts", ""]
-    fixes = section(t, "Core fixes"); failed = [(n, l) for n, (val, l) in sorted(facts(t).items()) if val == "no"]
-    cat = catalog()
-    for n, line in failed:
-        line = line.strip()
-        if not DOC_LINK.search(line):
-            link = next((DOC_LINK.search(l).group(0) for l in fixes.splitlines() if re.search(rf"\bF{n}\b", l) and DOC_LINK.search(l)), "")
-            if link: line += f" Docs: {link}"
-            elif cat.get(n): line += " Docs: " + ", ".join(f"https://docs.typesafe.ai/{s}.md" for s in cat[n])
-        out.append(line)
-    if not failed: out.append("None.")
-    if fixes.strip():
-        out += ["", "## Core fixes (untested: from reading the code, not run against it)", "", fixes.strip()]
-    return "\n".join(out) + "\n", d, r
+    slug = p.parent.name; label = verdict_label(t, v)
+    who = f"{d.get('owner', '')}/{d.get('project', slug)}" if "github.com" in d.get("url", "") else d.get("project", slug)
+    commit = d.get("commit", "").split()[0] if d.get("commit") else ""
+    at = (f"at [`{commit[:7]}`]({d['url'].rstrip('/')}/tree/{commit})" if re.fullmatch(r"[0-9a-f]{7,40}", commit) and "github.com" in d.get("url", "")
+          else f"[{d.get('url', '')}]({d.get('url', '')}), {d.get('commit', '')}")
+    ptype = d.get("project_type", "").split()[0] if d.get("project_type") else ""
+    ptype = "" if ptype in ("", "unrecorded") else ptype.replace("-", " ")
+    sc = dict(re.findall(r"(\w+):\s*([\w.]+)", d.get("scores", "")))
+    scores = " · ".join(f"{k.capitalize()} {dots(sc.get(k, ''))}" for k in ("execution", "fit", "coverage", "evidence"))
+    stale = [f"*Rated under an earlier rubric ({r or 'unrecorded'}). A re-rating is queued.*", ""] if r < RUBRIC else []
+    rows = fact_rows(t); summ = section(t, "Summary").strip()
+    sentences = [x.strip() for x in re.split(r"(?<=[.!?])\s+", summ.replace("\n", " ")) if x.strip()][:3]
+    fixes = [re.sub(r"^\d+\.\s*", "", l).strip() for l in section(t, "Core fixes").splitlines() if re.match(r"^\d+\.", l.strip())]
+    top = re.sub(r"^\**F\d+[^,:]*?\**[,:]\s*", "", fixes[0]).split(". ")[0].rstrip(".") + "." if fixes else ""
+    failing = [x for x in rows if x[2] in ("no", "unknown")]
+    major = [x for x in failing if not minor_fact(x[0], x[3], x[1])]
+    minor = [x for x in failing if minor_fact(x[0], x[3], x[1])]
+    tested = next((section(t, h) for h in ("Tested here", "Does it help") if section(t, h).strip()), "")
+    L = lambda x: linkify(x, d)
+    detail = ["[← All ratings](README.md)", ""] + stale + [
+        f"> **{who}** {at}" + (f" · {ptype}" if ptype else ""), f"> ### Verdict {v}: {label}", f"> {scores}", ">"]
+    detail += [f"> - {L(x)}" for x in sentences]
+    if top: detail += [">", f"> **Top fix:** {L(top)}"]
+    detail += ["", "## What holds it back", ""] + ([f"- **{n_}** ({'F%d' % n}): {L(f)}" for n, n_, _, f in major] or ["Nothing that lowers the verdict."])
+    if tested.strip(): detail += ["", "## Tested here", "", L(tested.strip())]
+    if fixes:
+        detail += ["", "## Fixes (from reading the code; not tested against it)", ""] + [f"{i}. {L(x)}" for i, x in enumerate(fixes[:3], 1)]
+    if minor: detail += ["", "**Minor:** " + "; ".join(f"{n_} (F{n})" for n, n_, _, _ in minor) + ". These are listed fixes and don't lower the verdict."]
+    detail += ["", f"[Full rating: every fact, its evidence and the files read →](full/{slug}.md)", ""]
+    head = f"**Verdict {v}, {label}**" + (f" · {ptype}" if ptype else "") + f" · rated {d.get('rated', '')} {at} · read: {d.get('depth', '').split()[0] if d.get('depth') else ''} · rubric {r or 'unrecorded'} · {d.get('rater', 'rater unrecorded')}" + (f", {d['effort'].split()[0]} effort" if d.get("effort") else "")
+    full = [f"[← Summary](../{slug}.md)", "", f"# {d.get('project', slug)}: full rating", "", head, ""] + stale + ["## Summary", "", L(summ), "",
+            "## What fails", "", "| Fact | Finding |", "|---|---|"]
+    full += [f"| {cell(n_)} (F{n}) | **{val}.** {cell(L(f))} |" for n, n_, val, f in rows if n == 0 or val in ("no", "unknown")]
+    passes = [x for x in rows if x[0] != 0 and x[2] not in ("no", "unknown")]
+    if passes:
+        full += ["", "<details>", f"<summary><b>What passes ({sum(x[2] == 'yes' for x in passes)}) and doesn't apply ({sum(x[2] == 'n.a.' for x in passes)})</b></summary>", "",
+                 "| Fact | Finding |", "|---|---|"] + [f"| {cell(n_)} (F{n}) | {val}. {cell(L(f))} |" for n, n_, val, f in passes] + ["", "</details>"]
+    for title, name in (("Scores", "Scores"), ("Why this verdict", "Verdict and reasoning")):
+        if section(t, name).strip(): full += ["", f"## {title}", "", L(section(t, name).strip())]
+    if tested.strip(): full += ["", "## Tested here", "", L(tested.strip())]
+    if fixes: full += ["", "## Fixes (from reading the code; not tested against it)", ""] + [f"{i}. {L(x)}" for i, x in enumerate(fixes, 1)]
+    cov = section(t, "Coverage").strip()
+    if cov: full += ["", "<details>", f"<summary><b>Files read ({len([l for l in cov.splitlines() if l.strip().startswith('-')])})</b></summary>", "", cov, "", "</details>"]
+    return "\n".join(detail) + "\n", "\n".join(full) + "\n", d, r, why_line(t, d)
 
 def export(outdir):
-    outdir = pathlib.Path(outdir); pages = {}; rows = []
+    outdir = pathlib.Path(outdir); pages = {}; rows = []; any_stale = False
     # Only full reads are published; quick (extract) ratings stay in the library.
     for slug, p in sorted(latest_per_project(full_only=True).items()):
-        text, d, r = export_page(p); pages[slug] = (p, text)
+        detail, full, d, r, why = export_pages(p); pages[slug] = (p, detail, full)
         v = d.get("verdict", "").split()[0] if d.get("verdict") else ""
-        rows.append(f"| [{d.get('owner', '')}/{d.get('project', slug)}]({slug}.md) | {v} {VERDICT_LABEL.get(v, '')} | {d.get('rated', '')} | {r or 'unrecorded'} |")
+        stale = r < RUBRIC; any_stale |= stale
+        who = f"{d.get('owner', '')}/{d.get('project', slug)}" if "github.com" in d.get("url", "") else d.get("project", slug)
+        ptype = (d.get("project_type", "").split() or [""])[0]
+        ptype = "" if ptype == "unrecorded" else ptype.replace("-", " ")
+        rows.append((-int(v) if v.isdigit() else 0, f"| [{who}]({slug}.md) | {ptype} | **{v} {verdict_label(p.read_text(errors='ignore'), v)}** | {cell(why)} | {d.get('rated', '')}{' †' if stale else ''} |"))
     tpl = SKILL / "ratings-template"
-    readme = (tpl / "README.md").read_text().rstrip("\n") + "\n\n## Ratings\n\n| Project | Verdict | Rated | Rubric |\n|---|---|---|---|\n" + "\n".join(rows) + "\n"
+    readme = (tpl / "README.md").read_text().rstrip("\n") + "\n\n## Ratings\n\n| Project | Type | Verdict | Why | Rated |\n|---|---|---|---|---|\n" + "\n".join(r for _, r in sorted(rows)) + "\n"
+    if any_stale: readme += "\n† Rated under an earlier rubric; a re-rating is queued.\n"
     pt = LIB / "private-terms.txt"; pats = []
     if pt.exists():
         pats = [re.compile(l.strip(), re.I) for l in pt.read_text().splitlines() if l.strip() and not l.lstrip().startswith("#")]
     else:
         print(f"warning: {pt} not found; no private-term scan", file=sys.stderr)
     hits = []
-    for name, text in [(f"{s}.md", x[1]) for s, x in pages.items()] + [("README.md", readme)]:
+    for name, text in [(f"{s}.md", x[1]) for s, x in pages.items()] + [(f"full/{s}.md", x[2]) for s, x in pages.items()] + [("README.md", readme)]:
         for i, line in enumerate(text.splitlines(), 1):
             for pat in pats:
                 if pat.search(line):
                     src = ""
                     if name != "README.md":
-                        sp = pages[name[:-3]][0]
+                        sp = pages[name.split("/")[-1][:-3]][0]
                         j = next((k for k, l in enumerate(sp.read_text(errors="ignore").splitlines(), 1) if l.strip() and l.strip() in line), None)
                         src = f" (source {sp}" + (f":{j}" if j else "") + ")"
                     hits.append(f"{name}:{i}: matches private term /{pat.pattern}/{src}")
-    for slug, (sp, _) in pages.items():
+    for slug, (sp, _, _) in pages.items():
         for i, line in enumerate(sp.read_text(errors="ignore").splitlines(), 1):
             for pat in pats:
                 if pat.search(line):
@@ -356,7 +433,9 @@ def export(outdir):
     if hits:
         sys.exit("export refused; nothing written:\n- " + "\n- ".join(hits))
     outdir.mkdir(parents=True, exist_ok=True)
-    for s, (_, text) in pages.items(): (outdir / f"{s}.md").write_text(text)
+    (outdir / "full").mkdir(exist_ok=True)
+    for s, (_, detail, full) in pages.items():
+        (outdir / f"{s}.md").write_text(detail); (outdir / "full" / f"{s}.md").write_text(full)
     (outdir / "README.md").write_text(readme)
     shutil.copy(tpl / "LICENSE", outdir / "LICENSE")
     print(f"exported {len(pages)} pages to {outdir}")

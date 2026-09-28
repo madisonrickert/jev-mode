@@ -382,7 +382,7 @@ def test_export_writes_page_readme_license_and_index(tmp_path, lib):
     assert "Use with a fix" in page and "Uses Jev for triage" in page
     assert "x.py:10" in page and "https://docs.typesafe.ai/primitives.md" in page
     assert "c" * 40 in page
-    assert "untested" in page.lower() and "make options exclusive" in page
+    assert "not tested against it" in page and "make options exclusive" in page
     assert "F1 check1" not in page
     assert "Earlier rubric" not in page
     readme = (out / "README.md").read_text()
@@ -408,7 +408,7 @@ def test_export_tags_earlier_rubric(tmp_path, lib):
     make_rating(d / "2026-09-20.md", "Old", "o", "https://github.com/o/old", "2026-09-20", rubric="2026-09-01")
     out = tmp_path / "out"
     assert run(lib, "export", str(out)).returncode == 0
-    assert "Earlier rubric (2026-09-01)" in (out / "o__old.md").read_text()
+    assert "earlier rubric (2026-09-01)" in (out / "o__old.md").read_text()
 
 
 def test_export_refuses_private_term(tmp_path, lib):
@@ -508,3 +508,62 @@ def test_check_requires_f0_under_current_rubric(tmp_path, lib):
     text = r.read_text().replace("- F0 check0 — yes. evidence:0\n", ""); r.write_text(text)
     p = run(lib, "check", str(r))
     assert p.returncode != 0 and "F0" in p.stdout + p.stderr
+
+
+def seed_shape(tmp_path, lib, **kw):
+    r = make_rating(tmp_path / "s.md", "Proj", "o", "https://github.com/o/proj", "2026-09-28",
+                    commit="c" * 40, verdict=3,
+                    summary="Sends reviews to Jev. Batches well. Two options overlap.",
+                    fact_lines={8: NO_F8[8] + " https://docs.typesafe.ai/primitives.md",
+                                12: "- F12 Model pinned (fix-only) — no. Uses jev-latest (x.py:3). `models`"},
+                    core_fixes="1. **F8**, make options exclusive. `primitives`.\n2. **F12**, pin the model. `models`.", **kw)
+    t = r.read_text().replace("---\n## Summary", "why: One compound option set holds it back.\n---\n## Summary", 1)
+    r.write_text(t)
+    assert run(lib, "add", str(r)).returncode == 0
+
+
+def test_export_index_has_type_why_and_stale_mark(tmp_path, lib):
+    seed_shape(tmp_path, lib)
+    d = lib / "projects" / "o__old"; d.mkdir(parents=True)
+    make_rating(d / "2026-09-20.md", "Old", "o", "https://github.com/o/old", "2026-09-20", rubric="2026-09-01",
+                summary="First sentence is the fallback. Second one is not.")
+    out = tmp_path / "out"; assert run(lib, "export", str(out)).returncode == 0
+    readme = (out / "README.md").read_text()
+    assert "| Project | Type | Verdict | Why | Rated |" in readme
+    assert "One compound option set holds it back." in readme
+    assert "First sentence is the fallback." in readme and "Second one is not" not in readme
+    assert "2026-09-20 †" in readme and "earlier rubric" in readme.lower()
+
+
+def test_export_detail_page_is_one_screen_card(tmp_path, lib):
+    seed_shape(tmp_path, lib)
+    out = tmp_path / "out"; assert run(lib, "export", str(out)).returncode == 0
+    page = (out / "o__proj.md").read_text()
+    assert "### Verdict 3: Use with a fix" in page
+    assert "Execution ●●●" in page and "Evidence ●●○" in page
+    assert "- Batches well." in page
+    hold = page.split("## What holds it back")[1].split("##")[0]
+    assert "options a and b overlap" in hold and "jev-latest" not in hold
+    assert "Minor" in page and "Model pinned" in page.split("Minor")[1]
+    assert "full/o__proj.md" in page and "F1 check1" not in page
+
+
+def test_export_full_page_collapses_passes_and_links_lines(tmp_path, lib):
+    seed_shape(tmp_path, lib)
+    out = tmp_path / "out"; assert run(lib, "export", str(out)).returncode == 0
+    full = (out / "full" / "o__proj.md").read_text()
+    before, _, after = full.partition("<details>")
+    assert "options a and b overlap" in before and "check1" not in before
+    assert "check1" in after
+    assert "https://github.com/o/proj/blob/" + "c" * 40 + "/x.py#L10" in full
+    assert "https://docs.typesafe.ai/primitives" in full
+
+
+def test_export_verdict_one_uses_the_rating_label(tmp_path, lib):
+    r = make_rating(tmp_path / "v1.md", "Imit", "o", "https://github.com/o/imit", "2026-09-28", verdict=1,
+                    scores="execution: 0, fit: 0, coverage: 0, evidence: 0",
+                    fact_lines={0: "- F0 Calls hosted Jev — no. Only an imitation of the API; no file would answer it. https://docs.typesafe.ai/introduction/quickstart.md"})
+    r.write_text(r.read_text().replace("Test fixture.", "Not a Jev integration: it imitates Jev and says so."))
+    assert run(lib, "add", str(r)).returncode == 0, "fixture"
+    out = tmp_path / "out"; assert run(lib, "export", str(out)).returncode == 0
+    assert "Verdict 1: Not a Jev integration" in (out / "o__imit.md").read_text()

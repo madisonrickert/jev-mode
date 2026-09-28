@@ -71,6 +71,7 @@ lineage: cookbook:<slug> | project:<owner/repo> | new
 stages: [data-prep, question-state, execution, decision]   # only these four labels, exactly as written
 closes_loop: none | calibrates | revises | both
 verdict: 5 | 4 | 3 | 2 | 1 | cant-rate   # cant-rate = "Can't rate yet"
+why: <at most 20 words: the one reason for this verdict, for the public index>
 scores: {execution: n, fit: n, coverage: n, evidence: n}
 via: direct | list:<name>   # direct = someone named it; list:<name> = it came off a curated list
 ---
