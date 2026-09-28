@@ -76,10 +76,6 @@ cp -r jev-mode/jevaluate ~/.claude/skills/
 
 Then ask Claude Code: `jevaluate https://github.com/valentynkit/jev-belay`. Use a Sonnet-class model at medium effort every time, so ratings stay comparable. A rating reads every file that could change its verdict, so it isn't cheap: about 45k tokens plus the size of those files, typically 100-160k for a small repo. Ratings save to `~/.claude/jevaluate-library/` (or `$JEVALUATE_LIBRARY`), never into the skill.
 
-## Published ratings
-
-Ratings of community projects are in [`ratings/`](../ratings/), under CC0.
-
 ## Limits
 
 Jevaluate runs entirely on an LLM and doesn't call Jev to make its ratings. That's by design: not everyone using it has a TypeSafe API key, and the best ways to design Jev's state and questions are still being worked out. A Jev-powered Jevaluate will follow once there's a solid baseline of LLM ratings to compare it against.
