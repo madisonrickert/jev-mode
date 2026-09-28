@@ -18,7 +18,7 @@ Read only the file for the chosen mode.
 
 ## Model
 
-Run on a Sonnet-class model at high effort, the same one every time: ratings stay comparable only if the rater doesn't change.
+Run on a Sonnet-class model at medium effort, the same one every time: ratings stay comparable only if the rater doesn't change. Record both in the rating (`rater`, `effort`).
 
 ## Verdicts
 
@@ -26,9 +26,10 @@ Run on a Sonnet-class model at high effort, the same one every time: ratings sta
 |---|---|---|
 | 5 | Learn from it | Follows the principles and is measured on labels; reference-grade |
 | 4 | Use it | Correct use with minor gaps; plausible but unmeasured |
-| 3 | Use with a fix | Right idea, one fixable design flaw |
+| 3 | Use with a fix | Right idea, one fixable design flaw (for untrusted text or spliced values, only when a decision acts on sensitive data with no review) |
 | 2 | Rework it | Core principles broken; results likely unreliable |
-| 1 | Jev in name only | Jev's output doesn't drive any decision, or it doesn't call Jev at all |
+| 1 | False marketing: Jev in name only | Claims to use Jev, and no traced request shows it calling Jev |
+| 1 | Not a Jev integration | Never claims to call Jev (a Jev-like model, say), or calls it and the answers drive nothing |
 | -- | Can't rate yet | Too little visible to judge (for example, README only, no code) |
 
 These are the names only; the rules that decide each verdict are in `rubric.md`, and the verdict comes from them, never from averaging dimension scores. Any verdict of 3 or below always states its reasoning and the core fixes. Offer to write the fixed version only if the user asks.

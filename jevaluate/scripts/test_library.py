@@ -27,31 +27,35 @@ FACTS_BLOCK = "\n".join(f"- F{n} check{n} — yes. evidence:{n}" for n in range(
 
 
 def make_rating(path, project, owner, url, rated, commit="abc123def456789", verdict=4,
-                 scores="execution: 3, fit: 3, coverage: 3, evidence: 2", via=None):
-    via_line = f"via: {via}\n" if via else ""
-    text = f"""---
-project: {project}
-url: {url}
-owner: {owner}
-rated: {rated}
-rubric: 2026-09-28
-commit: {commit}
-depth: full
-lineage: new
-stages: [data-prep, question-state, execution, decision]
-closes_loop: none
-verdict: {verdict}
-scores: {{{scores}}}
-{via_line}---
-## Summary
-Test fixture rating for library tests.
-## Facts (with evidence)
-{FACTS_BLOCK}
-## Verdict and reasoning
-Test fixture.
-"""
+                 scores="execution: 3, fit: 3, coverage: 3, evidence: 2", via="direct",
+                 depth="full", rubric="2026-09-28b", drop=(), coverage=None, fact_lines=None,
+                 core_fixes=None, summary="Test fixture rating for library tests."):
+    fm = {"project": project, "url": url, "owner": owner, "rated": rated, "rubric": rubric,
+          "commit": commit, "depth": depth, "lineage": "new",
+          "stages": "[data-prep, question-state, execution, decision]", "closes_loop": "none",
+          "verdict": verdict, "scores": "{" + scores + "}", "via": via, "project_type": "sdk",
+          "rater": "claude-sonnet-5-5", "effort": "medium"}
+    for k in drop:
+        fm.pop(k, None)
+    fl = {n: f"- F{n} check{n} — yes. evidence:{n}" for n in range(0, 24)}
+    fl.update(fact_lines or {})
+    text = "---\n" + "\n".join(f"{k}: {v}" for k, v in fm.items()) + "\n---\n"
+    text += f"## Summary\n{summary}\n## Facts (with evidence)\n" + "\n".join(fl[n] for n in sorted(fl)) + "\n"
+    if coverage is not None:
+        text += "## Coverage\n" + coverage + "\n"
+    text += "## Verdict and reasoning\nTest fixture.\n"
+    if core_fixes is not None:
+        text += "## Core fixes\n" + core_fixes + "\n"
     path.write_text(text)
     return path
+
+
+def make_evidence(tmp_path, files=("a.py", "b.py")):
+    ev = tmp_path / "ev"; ev.mkdir(exist_ok=True)
+    rows = "\n".join(f"| {f} | 10 | 1 | 0 | 0 |" for f in files)
+    (ev / "manifest.md").write_text(
+        "# Coverage manifest\n\n| file | chars | jev | decision | eval |\n|---|---|---|---|---|\n" + rows + "\n")
+    return ev
 
 
 @pytest.fixture
@@ -187,3 +191,320 @@ def test_list_add_writes_dated_and_latest(lib, tmp_path):
     assert pathlib.Path(latest).exists()
     assert pathlib.Path(latest).name == "entries.tsv"
     assert pathlib.Path(dated).read_text() == tsv.read_text()
+
+
+# ---- check: frontmatter, coverage, docs links ----
+
+@pytest.mark.parametrize("field", ["project_type", "rater", "effort", "via"])
+def test_check_refuses_missing_frontmatter_field(tmp_path, lib, field):
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28", drop=(field,))
+    p = run(lib, "check", str(r))
+    assert p.returncode == 1
+    assert f"missing front-matter field: {field}" in p.stdout
+
+
+def test_check_refuses_coverage_omitting_manifest_file(tmp_path, lib):
+    ev = make_evidence(tmp_path)
+    (tmp_path / "r-evidence").symlink_to(ev)
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28",
+                    depth="extract", coverage="- a.py: read")
+    p = run(lib, "check", str(r))
+    assert p.returncode == 1
+    assert "b.py" in p.stdout and "Coverage" in p.stdout
+
+
+def test_check_accepts_coverage_listing_every_manifest_file(tmp_path, lib):
+    ev = make_evidence(tmp_path)
+    (tmp_path / "r-evidence").symlink_to(ev)
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28",
+                    coverage="- a.py: read\n- b.py: read")
+    p = run(lib, "check", str(r))
+    assert p.returncode == 0, p.stdout + p.stderr
+
+
+def test_check_skipped_line_counts_as_listed_when_not_full(tmp_path, lib):
+    ev = make_evidence(tmp_path)
+    (tmp_path / "r-evidence").symlink_to(ev)
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28",
+                    depth="extract", coverage="- a.py: read\nskipped: b.py is a lockfile")
+    p = run(lib, "check", str(r))
+    assert p.returncode == 0, p.stdout + p.stderr
+
+
+def test_check_skipped_line_refused_when_depth_full(tmp_path, lib):
+    ev = make_evidence(tmp_path)
+    (tmp_path / "r-evidence").symlink_to(ev)
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28",
+                    depth="full", coverage="- a.py: read\nskipped: b.py is a lockfile")
+    p = run(lib, "check", str(r))
+    assert p.returncode == 1
+    assert "full" in p.stdout
+
+
+def test_check_no_manifest_is_a_warning_not_a_refusal(tmp_path, lib):
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28", coverage="- a.py: read")
+    p = run(lib, "check", str(r))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "manifest" in p.stderr.lower()
+
+
+@pytest.mark.parametrize("word", ["read selectively", "skimmed the tests", "partial read of src", "skipped the docs"])
+def test_check_refuses_full_depth_with_partial_coverage_words(tmp_path, lib, word):
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28",
+                    depth="full", coverage=f"Files were {word}.")
+    p = run(lib, "check", str(r))
+    assert p.returncode == 1
+    assert "full" in p.stdout
+
+
+def test_check_full_depth_allows_none_skipped(tmp_path, lib):
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28",
+                    depth="full", coverage="All 5 files read; none skipped.")
+    p = run(lib, "check", str(r))
+    assert p.returncode == 0, p.stdout + p.stderr
+
+
+NO_F8 = {8: "- F8 options overlap — no. options a and b overlap (x.py:10)"}
+
+
+def test_check_refuses_no_fact_without_docs_link(tmp_path, lib):
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28",
+                    verdict=3, fact_lines=NO_F8, core_fixes="1. **F8**, make options exclusive.")
+    p = run(lib, "check", str(r))
+    assert p.returncode == 1
+    assert "F8" in p.stdout and "docs" in p.stdout.lower()
+
+
+def test_check_accepts_docs_link_on_fact_line(tmp_path, lib):
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28", verdict=3,
+                    fact_lines={8: NO_F8[8] + " https://docs.typesafe.ai/primitives.md"})
+    p = run(lib, "check", str(r))
+    assert p.returncode == 0, p.stdout + p.stderr
+
+
+def test_check_accepts_doc_slug_in_core_fixes_entry(tmp_path, lib):
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28", verdict=3,
+                    fact_lines=NO_F8, core_fixes="1. **F8**, make options exclusive. `primitives`, `cookbooks/x`.")
+    p = run(lib, "check", str(r))
+    assert p.returncode == 0, p.stdout + p.stderr
+
+
+def test_check_core_fixes_link_for_other_fact_does_not_count(tmp_path, lib):
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28", verdict=3,
+                    fact_lines=NO_F8, core_fixes="1. **F9**, add other. `primitives`.")
+    p = run(lib, "check", str(r))
+    assert p.returncode == 1
+
+
+# ---- add flags ----
+
+def test_add_link_docs_fills_missing_link_from_catalog(tmp_path, lib):
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28",
+                    verdict=3, fact_lines=NO_F8)
+    plain = run(lib, "add", str(r))
+    assert plain.returncode != 0
+    p = run(lib, "add", "--link-docs", str(r))
+    assert p.returncode == 0, p.stdout + p.stderr
+    saved = (lib / "projects" / "o__p" / "2026-09-28.md").read_text()
+    assert "https://docs.typesafe.ai/primitives.md" in saved.split("F8 options overlap")[1].splitlines()[0]
+
+
+def test_add_evidence_copies_folder_beside_rating(tmp_path, lib):
+    ev = make_evidence(tmp_path)
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28",
+                    coverage="- a.py: read\n- b.py: read")
+    p = run(lib, "add", "--evidence", str(ev), str(r))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (lib / "projects" / "o__p" / "2026-09-28-evidence" / "manifest.md").exists()
+
+
+def test_add_evidence_manifest_is_checked_against_coverage(tmp_path, lib):
+    ev = make_evidence(tmp_path)
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28", coverage="- a.py: read")
+    p = run(lib, "add", "--evidence", str(ev), str(r))
+    assert p.returncode != 0
+    assert not (lib / "projects" / "o__p" / "2026-09-28.md").exists()
+
+
+def test_add_supersedes_removes_old_file_after_writing_new(tmp_path, lib):
+    r1 = make_rating(tmp_path / "r1.md", "P", "o", "https://github.com/o/p", "2026-09-28", commit="a" * 12)
+    run(lib, "add", str(r1))
+    old = lib / "projects" / "o__p" / "2026-09-28.md"
+    r2 = make_rating(tmp_path / "r2.md", "P", "o", "https://github.com/o/p", "2026-09-28", commit="b" * 12)
+    p = run(lib, "add", "--supersedes", str(old), str(r2))
+    assert p.returncode == 0, p.stdout + p.stderr
+    remaining = list((lib / "projects" / "o__p").glob("*.md"))
+    assert len(remaining) == 1
+    assert "b" * 12 in remaining[0].read_text()
+    assert "index: 1 ratings" in p.stdout
+
+
+def test_add_supersedes_keeps_old_file_when_new_is_refused(tmp_path, lib):
+    r1 = make_rating(tmp_path / "r1.md", "P", "o", "https://github.com/o/p", "2026-09-28")
+    run(lib, "add", str(r1))
+    old = lib / "projects" / "o__p" / "2026-09-28.md"
+    bad = make_rating(tmp_path / "bad.md", "P", "o", "https://github.com/o/p", "2026-09-28", drop=("rater",))
+    p = run(lib, "add", "--supersedes", str(old), str(bad))
+    assert p.returncode != 0
+    assert old.exists()
+
+
+# ---- stale ----
+
+def test_stale_lists_only_older_rubric(tmp_path, lib):
+    r1 = make_rating(tmp_path / "r1.md", "Old", "o", "https://github.com/o/old", "2026-09-20")
+    r2 = make_rating(tmp_path / "r2.md", "New", "o", "https://github.com/o/new", "2026-09-28")
+    run(lib, "add", str(r2))
+    d = lib / "projects" / "o__old"; d.mkdir(parents=True)
+    make_rating(d / "2026-09-20.md", "Old", "o", "https://github.com/o/old", "2026-09-20", rubric="2026-09-01")
+    p = run(lib, "stale")
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "o__old" in p.stdout and "2026-09-01" in p.stdout
+    assert "o__new" not in p.stdout
+
+
+# ---- export ----
+
+def seed_export(tmp_path, lib):
+    r = make_rating(tmp_path / "r.md", "Proj", "o", "https://github.com/o/proj", "2026-09-28",
+                    commit="c" * 40, verdict=3, summary="Uses Jev for triage; one overlap problem.",
+                    fact_lines={8: NO_F8[8] + " https://docs.typesafe.ai/primitives.md"},
+                    core_fixes="1. **F8**, make options exclusive. `primitives`.")
+    assert run(lib, "add", str(r)).returncode == 0
+
+
+def test_export_writes_page_readme_license_and_index(tmp_path, lib):
+    seed_export(tmp_path, lib)
+    out = tmp_path / "out"
+    p = run(lib, "export", str(out))
+    assert p.returncode == 0, p.stdout + p.stderr
+    page = (out / "o__proj.md").read_text()
+    assert "Use with a fix" in page and "Uses Jev for triage" in page
+    assert "x.py:10" in page and "https://docs.typesafe.ai/primitives.md" in page
+    assert "c" * 40 in page
+    assert "untested" in page.lower() and "make options exclusive" in page
+    assert "F1 check1" not in page
+    assert "Earlier rubric" not in page
+    readme = (out / "README.md").read_text()
+    template = (SCRIPT.parent.parent / "ratings-template" / "README.md").read_text()
+    assert readme.startswith(template)
+    assert "| o/proj" in readme or "o__proj" in readme
+    assert (out / "LICENSE").read_text() == (SCRIPT.parent.parent / "ratings-template" / "LICENSE").read_text()
+
+
+def test_export_takes_latest_rating_per_project(tmp_path, lib):
+    seed_export(tmp_path, lib)
+    r = make_rating(tmp_path / "r2.md", "Proj", "o", "https://github.com/o/proj", "2026-09-29",
+                    summary="Second round summary.")
+    run(lib, "add", str(r))
+    out = tmp_path / "out"
+    assert run(lib, "export", str(out)).returncode == 0
+    assert "Second round summary." in (out / "o__proj.md").read_text()
+    assert len(list(out.glob("o__proj*.md"))) == 1
+
+
+def test_export_tags_earlier_rubric(tmp_path, lib):
+    d = lib / "projects" / "o__old"; d.mkdir(parents=True)
+    make_rating(d / "2026-09-20.md", "Old", "o", "https://github.com/o/old", "2026-09-20", rubric="2026-09-01")
+    out = tmp_path / "out"
+    assert run(lib, "export", str(out)).returncode == 0
+    assert "Earlier rubric (2026-09-01)" in (out / "o__old.md").read_text()
+
+
+def test_export_refuses_private_term(tmp_path, lib):
+    r = make_rating(tmp_path / "r.md", "Proj", "o", "https://github.com/o/proj", "2026-09-28",
+                    summary="PRIVATEMARKER note that must not ship.")
+    run(lib, "add", str(r))
+    (lib / "private-terms.txt").write_text("# comment\nPRIVATEMARKER\n")
+    out = tmp_path / "out"
+    p = run(lib, "export", str(out))
+    assert p.returncode != 0
+    assert "o__proj" in p.stderr + p.stdout and "PRIVATEMARKER" in p.stderr + p.stdout
+    assert not (out / "o__proj.md").exists()
+
+
+# ---- migrate-fields ----
+
+def test_migrate_fields_fills_only_missing_and_is_idempotent(tmp_path, lib):
+    d = lib / "projects" / "o__p"; d.mkdir(parents=True)
+    f = make_rating(d / "2026-09-28.md", "P", "o", "https://github.com/o/p", "2026-09-28",
+                    drop=("rater", "effort", "project_type", "via"))
+    g = make_rating(d / "2026-09-29.md", "P", "o", "https://github.com/o/p", "2026-09-29", via="list:awesome-jev")
+    p = run(lib, "migrate-fields")
+    assert p.returncode == 0, p.stdout + p.stderr
+    t = f.read_text()
+    for line in ("rater: unknown", "effort: medium", "project_type: unrecorded", "via: unrecorded"):
+        assert line in t
+    assert t.startswith("---\n") and "\n---\n## Summary" in t
+    assert "via: list:awesome-jev" in g.read_text() and "rater: claude-sonnet-5-5" in g.read_text()
+    before = f.read_text(), g.read_text()
+    run(lib, "migrate-fields")
+    assert (f.read_text(), g.read_text()) == before
+
+
+def test_fill_docs_existing_only_where_single_page(tmp_path, lib):
+    d = lib / "projects" / "o__p"; d.mkdir(parents=True)
+    f = make_rating(d / "2026-09-28.md", "P", "o", "https://github.com/o/p", "2026-09-28", verdict=3,
+                    fact_lines={1: "- F1 atomic — no. x.py:3",
+                                2: "- F2 primitive — no. y.py:4"})
+    p = run(lib, "fill-docs")
+    assert p.returncode == 0, p.stdout + p.stderr
+    t = f.read_text()
+    assert "concepts/how-to-build-with-system-one" in t.split("F1 atomic")[1].splitlines()[0]
+    assert "docs.typesafe.ai" not in t.split("F2 primitive")[1].splitlines()[0]
+    assert "F2" in p.stdout
+
+
+def test_export_refuses_private_term_anywhere_in_source_rating(tmp_path, lib):
+    r = make_rating(tmp_path / "r.md", "Proj", "o", "https://github.com/o/proj", "2026-09-28")
+    r.write_text(r.read_text().replace("Test fixture.\n", "PRIVATEMARKER note.\n"))
+    run(lib, "add", str(r))
+    (lib / "private-terms.txt").write_text("PRIVATEMARKER\n")
+    out = tmp_path / "out"
+    p = run(lib, "export", str(out))
+    assert p.returncode != 0
+    assert "2026-09-28.md" in p.stderr and "PRIVATEMARKER" in p.stderr
+    assert not out.exists() or not list(out.glob("*.md"))
+
+
+def test_export_skips_quick_ratings_and_falls_back_to_latest_full(tmp_path, lib):
+    d = lib / "projects" / "o__q"; d.mkdir(parents=True)
+    make_rating(d / "2026-09-20.md", "Q", "o", "https://github.com/o/q", "2026-09-20", summary="Full read summary.")
+    make_rating(d / "2026-09-28.md", "Q", "o", "https://github.com/o/q", "2026-09-28", depth="extract", summary="Quick read summary.")
+    e = lib / "projects" / "o__onlyquick"; e.mkdir(parents=True)
+    make_rating(e / "2026-09-28.md", "OQ", "o", "https://github.com/o/onlyquick", "2026-09-28", depth="extract")
+    out = tmp_path / "out"
+    assert run(lib, "export", str(out)).returncode == 0
+    assert "Full read summary." in (out / "o__q.md").read_text()
+    assert not (out / "o__onlyquick.md").exists()
+    assert "o__onlyquick" not in (out / "README.md").read_text()
+
+
+def test_add_numbers_after_highest_same_day_and_keeps_evidence_separate(tmp_path, lib):
+    d = lib / "projects" / "o__n"; d.mkdir(parents=True)
+    make_rating(d / "2026-09-28-2.md", "N", "o", "https://github.com/o/n", "2026-09-28")
+    old_ev = d / "2026-09-28-evidence"; old_ev.mkdir(); (old_ev / "manifest.md").write_text("OLD\n")
+    ev = tmp_path / "ev"; ev.mkdir(); (ev / "manifest.md").write_text("# m\n")
+    r = make_rating(tmp_path / "r.md", "N", "o", "https://github.com/o/n", "2026-09-28")
+    p = run(lib, "add", "--evidence", str(ev), str(r))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (d / "2026-09-28-3.md").exists() and not (d / "2026-09-28.md").exists()
+    assert (d / "2026-09-28-3-evidence" / "manifest.md").read_text() == "# m\n"
+    assert (old_ev / "manifest.md").read_text() == "OLD\n"
+
+
+@pytest.mark.parametrize("f0,verdict,ok", [
+    ("no", 3, False), ("unknown", 4, False), ("no", 1, True), ("unknown", "cant-rate", True), ("yes", 4, True)])
+def test_check_gates_verdict_on_f0(tmp_path, lib, f0, verdict, ok):
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28", verdict=verdict,
+                    fact_lines={0: f"- F0 Calls hosted Jev — {f0}. src/x.py:1; no file would answer it. https://docs.typesafe.ai/introduction/quickstart.md"})
+    p = run(lib, "check", str(r))
+    assert (p.returncode == 0) == ok, p.stdout + p.stderr
+    if not ok: assert "F0" in p.stdout + p.stderr and "verdict" in (p.stdout + p.stderr).lower()
+
+
+def test_check_requires_f0_under_current_rubric(tmp_path, lib):
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28")
+    text = r.read_text().replace("- F0 check0 — yes. evidence:0\n", ""); r.write_text(text)
+    p = run(lib, "check", str(r))
+    assert p.returncode != 0 and "F0" in p.stdout + p.stderr

@@ -2,10 +2,21 @@
 
 Location: $JEVALUATE_LIBRARY or ~/.claude/jevaluate-library/ (created on first use).
 Usage:
-  python3 library.py add <rating.md>          copy into projects/<slug>/ (never overwrites) and rebuild the index
+  python3 library.py add [--link-docs] [--evidence DIR] [--supersedes OLD.md] <rating.md>
+                                              copy into projects/<slug>/ (never overwrites) and rebuild the index;
+                                              --link-docs fills a missing docs link per failed fact from fix-catalog.md,
+                                              --evidence copies DIR to <rated>-evidence/ beside the rating,
+                                              --supersedes removes OLD.md once the new rating is saved
   python3 library.py index                    rebuild index.md from projects/*/*.md
   python3 library.py similar [--lineage X] [--stage Y] [--limit 3] [--exclude owner/repo]
-  python3 library.py check <rating.md>        check facts, fields and the verdict cap (add runs this first)
+  python3 library.py check [--evidence DIR] <rating.md>
+                                              check facts, fields, coverage vs the evidence manifest, docs links and the
+                                              verdict cap (add runs this first)
+  python3 library.py stale                    list ratings made under an older rubric than rubric.md
+  python3 library.py export <outdir>          latest rating per project as a short public page, plus README, LICENSE
+                                              (refuses if a line matches <library>/private-terms.txt)
+  python3 library.py migrate-fields           fill missing rater/effort/project_type/via on existing ratings (idempotent)
+  python3 library.py fill-docs                add a docs link to existing failed facts where fix-catalog names one page
   python3 library.py blind --exclude owner/repo --out DIR
                                               copy the library without that project, for a blind re-rate
   python3 library.py migrate                  move ratings/*.md into projects/<slug>/ (idempotent)
@@ -27,7 +38,10 @@ RAT = LIB / "ratings"
 PROJ = LIB / "projects"
 
 def front(p):
-    t = p.read_text(errors="ignore"); m = re.match(r"---\n(.*?)\n---", t, re.S); d = {}
+    return front_text(p.read_text(errors="ignore"))
+
+def front_text(t):
+    m = re.match(r"---\n(.*?)\n---", t, re.S); d = {}
     for line in (m.group(1).splitlines() if m else []):
         if ":" in line:
             k, v = line.split(":", 1); d[k.strip()] = v.strip()
@@ -66,22 +80,53 @@ def index():
     (LIB / "index.md").write_text("# Jevaluate ratings\n\nNewest first. One file per rating; re-ratings are new files.\n\n" + "\n".join(rows) + "\n")
     return len(rows) - 2
 
-def add(src):
-    src = pathlib.Path(src); d = front(src)
-    problems = check(src)
+def add(src, link_docs=False, evidence=None, supersedes=None):
+    src = pathlib.Path(src); text = src.read_text(errors="ignore")
+    if link_docs: text, _ = fill_docs(text, single_only=False)
+    d = front_text(text)
+    problems = check(src, evidence=evidence, text=text)
     if problems:
         sys.exit("not added; fix these and rerun:\n- " + "\n- ".join(problems))
+    for w in WARNINGS: print("warning: " + w, file=sys.stderr)
     for k in ("project", "owner", "rated", "verdict"):
         if not d.get(k): sys.exit(f"missing front-matter field: {k}")
     slug = slug_for(d.get("url", ""))
+    old = None
+    if supersedes:
+        old = pathlib.Path(supersedes).resolve()
+        if not (old.is_file() and old.parent.parent == PROJ.resolve() and old.suffix == ".md"):
+            sys.exit(f"--supersedes must name an existing rating inside {PROJ}")
+        if old.parent.name != slug:
+            sys.exit(f"--supersedes {old.parent.name} is a different project from the new rating ({slug})")
     pdir = PROJ / slug; pdir.mkdir(parents=True, exist_ok=True)
-    dest = pdir / f"{d['rated']}.md"
-    n = 2
-    while dest.exists():
-        dest = pdir / f"{d['rated']}-{n}.md"; n += 1
-    shutil.copy(src, dest); print(dest); print(f"index: {index()} ratings")
+    # Number after the highest same-day rating, so the newest always sorts last, even when an earlier file was superseded.
+    same = [int(m.group(1) or 1) for f in pdir.glob(f"{d['rated']}*.md")
+            if (m := re.fullmatch(re.escape(d['rated']) + r"(?:-(\d+))?", f.stem))]
+    dest = pdir / (f"{d['rated']}-{max(same) + 1}.md" if same else f"{d['rated']}.md")
+    ev_dest = pdir / f"{dest.stem}-evidence"
+    if evidence and ev_dest.exists(): sys.exit(f"{ev_dest} already exists; not overwriting another rating's evidence")
+    dest.write_text(text)
+    if evidence: shutil.copytree(evidence, ev_dest)
+    if old and old.exists() and old != dest.resolve():
+        old.unlink(); print(f"removed superseded {old}")
+    print(dest); print(f"index: {index()} ratings")
 
-RUBRIC = "2026-09-28"
+SKILL = pathlib.Path(__file__).resolve().parent.parent
+
+def _rubric_date():
+    try:
+        m = re.search(r"rubric (\d{4}-\d\d-\d\d[a-z]?)", (SKILL / "rubric.md").read_text())
+        if m: return m.group(1)
+    except OSError:
+        pass
+    return "2026-09-28"
+
+RUBRIC = _rubric_date()
+REQUIRED_FIELDS = ("project_type", "rater", "effort", "via")
+FIELD_DEFAULTS = {"rater": "unknown", "effort": "medium", "project_type": "unrecorded", "via": "unrecorded"}
+DOC_LINK = re.compile(r"docs\.typesafe\.ai/\S+|\b(?:cookbooks|concepts|patterns|primitives|model-jaggedness)/[\w\-]+(?:/[\w\-]+)*|`(?:primitives|confidence|models)`")
+PARTIAL = re.compile(r"\b(skipped|selective(?:ly)?|skimmed|partial(?:ly)?|partly)\b", re.I)
+NEGATED_SKIP = re.compile(r"\b(none|zero|0|no files?|not|nothing|never)\s+(?:were\s+|was\s+)?skipped", re.I)
 VALS = ("yes", "no", "n.a.", "unknown")
 FACT = re.compile(r"^\s*[-*]\s*\**F(\d+)\b[^\n]*?(?:—|--|:|\*\*)\s*\**\s*(yes|no|n\.a\.|n/a|not applicable|unknown|unverified|partial|unclear)(?!\w)", re.I)
 
@@ -96,15 +141,73 @@ def facts(text):
             out[int(m.group(1))] = (v, line)
     return out
 
-def check(src):
-    p = pathlib.Path(src); t = p.read_text(errors="ignore"); d = front(p); err = []
-    for k in ("project", "owner", "rated", "commit", "depth", "verdict", "scores", "rubric"):
+def section(text, name):
+    m = re.search(r"^## " + re.escape(name) + r"\b[^\n]*\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    return m.group(1) if m else ""
+
+def evidence_dir_for(p):
+    p = pathlib.Path(p)
+    for stem in (p.stem, re.sub(r"-\d+$", "", p.stem)):
+        e = p.parent / f"{stem}-evidence"
+        if e.is_dir(): return e
+    return None
+
+def manifest_files(ev):
+    m = ev / "manifest.md" if ev else None
+    if not m or not m.exists(): return None
+    out = []
+    for line in m.read_text(errors="ignore").splitlines():
+        if not line.startswith("|"): continue
+        cell = line.strip().strip("|").split("|")[0].strip()
+        if not cell or cell.lower() == "file" or set(cell) <= set("-: "): continue
+        out.append(cell)
+    return out
+
+def check_coverage(t, d, ev, err, warn):
+    cov = section(t, "Coverage"); full = d.get("depth", "") == "full"
+    skip_line = re.search(r"^\s*[-*]?\s*skipped\s*:\s*\S", cov, re.I | re.M)
+    if full:
+        if skip_line: err.append("depth is full but Coverage has a 'skipped:' line; lower the depth or read the files")
+        hit = PARTIAL.search(NEGATED_SKIP.sub("", cov))
+        if hit: err.append(f"depth is full but Coverage says '{hit.group(1)}'; use depth extract, or read everything")
+    files = manifest_files(ev)
+    if files is None:
+        warn.append("no evidence manifest.md found; Coverage was not checked against a file list")
+        return
+    if skip_line: return
+    missing = [f for f in files if f not in cov]
+    if missing:
+        err.append(f"Coverage omits {len(missing)} manifest file(s): " + ", ".join(missing[:8]) + (" ..." if len(missing) > 8 else "")
+                   + " (list each, or add a 'skipped: <reason>' line when depth is not full)")
+
+def check_doc_links(f, t, err):
+    fixes = section(t, "Core fixes")
+    for n, (val, line) in sorted(f.items()):
+        if val != "no" or DOC_LINK.search(line): continue
+        entry = [l for l in fixes.splitlines() if re.search(rf"\bF{n}\b", l)]
+        if not any(DOC_LINK.search(l) for l in entry):
+            err.append(f"F{n} is no but has no TypeSafe docs link on its line or in its Core fixes entry (e.g. docs.typesafe.ai/primitives.md; --link-docs fills it from fix-catalog.md)")
+
+WARNINGS = []
+
+def check(src, evidence=None, text=None):
+    p = pathlib.Path(src); t = text if text is not None else p.read_text(errors="ignore")
+    d = front_text(t); err = []; WARNINGS.clear()
+    for k in ("project", "owner", "rated", "commit", "depth", "verdict", "scores", "rubric") + REQUIRED_FIELDS:
         if not d.get(k): err.append(f"missing front-matter field: {k}")
+    check_coverage(t, d, pathlib.Path(evidence) if evidence else evidence_dir_for(p), err, WARNINGS)
     if d.get("rubric") and d["rubric"].split()[0] < RUBRIC: err.append(f"rubric {d['rubric']} is older than {RUBRIC}; rate with the current rubric")
     if "not recorded" in d.get("commit", ""): err.append("commit not recorded")
     v = d.get("verdict", "").split()[0] if d.get("verdict") else ""
     if v == "cant-rate": return err
     f = facts(t)
+    check_doc_links(f, t, err)
+    # F0 (calls hosted Jev) gates everything: only a traced call allows a verdict above 1.
+    f0 = f.get(0, ("",))[0]
+    if 0 not in f and d.get("rubric", "").split()[:1] and d["rubric"].split()[0] >= "2026-09-28b":
+        err.append("F0 missing from ## Facts: record the traced call ('- F0 Calls hosted Jev — yes. <file:line>')")
+    if 0 in f and f0 != "yes" and v not in ("1",):
+        err.append(f"F0 is {f0}: verdict {v} needs a traced call; use verdict 1 when F0 is no, cant-rate when it is unknown")
     for n in list(range(1, 24)):
         if n not in f: err.append(f"F{n} missing from ## Facts (line format: '- F{n} <name> — yes|no|n.a.|unknown. <evidence>')")
     for n, (val, line) in f.items():
@@ -132,6 +235,132 @@ def check(src):
             err.append("verdict 5 needs execution 3, fit 3, evidence 3 and closes_loop other than none")
     return err
 
+def catalog():
+    """fix-catalog.md -> {fact number: [doc slugs]} for rows whose first cell starts with F<n> (ranges skipped)."""
+    out = {}
+    try: rows = (SKILL / "fix-catalog.md").read_text().splitlines()
+    except OSError: return out
+    for row in rows:
+        cells = [c.strip() for c in row.strip().strip("|").split("|")]
+        if len(cells) < 3: continue
+        m = re.match(r"F(\d+)\b(?!-)", cells[0])
+        if not m: continue
+        out[int(m.group(1))] = re.findall(r"`([a-z][\w\-]*(?:/[\w\-]+)*)`", cells[2])
+    return out
+
+def fill_docs(text, single_only):
+    """Append a docs link to each 'no' fact lacking one. Returns (text, {n: 'filled'|'ambiguous'|'no page'})."""
+    cat = catalog(); f = facts(text); fixes = section(text, "Core fixes"); lines = text.split("\n"); report = {}
+    for n, (val, line) in sorted(f.items()):
+        if val != "no" or DOC_LINK.search(line): continue
+        if any(DOC_LINK.search(l) for l in fixes.splitlines() if re.search(rf"\bF{n}\b", l)): continue
+        slugs = cat.get(n, [])
+        if not slugs: report[n] = "no page"; continue
+        if single_only and len(slugs) != 1: report[n] = "ambiguous"; continue
+        link = " Docs: " + ", ".join(f"https://docs.typesafe.ai/{s}.md" for s in slugs)
+        lines[lines.index(line)] = line.rstrip() + link; report[n] = "filled"
+    return "\n".join(lines), report
+
+def stale():
+    rows = []
+    for p in sorted(ratings_glob()):
+        r = front(p).get("rubric", "").split()
+        r = r[0] if r else ""
+        if r < RUBRIC: rows.append(f"{p.parent.name}/{p.name}  rubric {r or 'missing'} (current {RUBRIC})")
+    print("\n".join(rows) if rows else "no stale ratings")
+    return len(rows)
+
+def migrate_fields():
+    changed = 0
+    for p in sorted(ratings_glob()):
+        t = p.read_text(errors="ignore"); m = re.match(r"---\n(.*?)\n---\n", t, re.S)
+        if not m: continue
+        d = front_text(t); add_lines = [f"{k}: {v}" for k, v in FIELD_DEFAULTS.items() if not d.get(k)]
+        if not add_lines: continue
+        body = [l for l in m.group(1).split("\n") if not re.match(r"(%s):\s*$" % "|".join(FIELD_DEFAULTS), l)]
+        p.write_text("---\n" + "\n".join(body + add_lines) + "\n---\n" + t[m.end():]); changed += 1
+    print(f"migrate-fields: {changed} ratings updated")
+
+def fill_docs_existing():
+    filled = 0; left = []
+    for p in sorted(ratings_glob()):
+        t = p.read_text(errors="ignore"); new, rep = fill_docs(t, single_only=True)
+        if new != t: p.write_text(new)
+        filled += sum(1 for v in rep.values() if v == "filled")
+        left += [f"{p.parent.name}/{p.name} F{n} ({v})" for n, v in rep.items() if v != "filled"]
+    print(f"fill-docs: {filled} facts linked")
+    for l in left: print("left alone: " + l)
+
+VERDICT_LABEL = {"5": "Learn from it", "4": "Use it", "3": "Use with a fix", "2": "Rework it", "1": "Jev in name only", "cant-rate": "Can't rate yet"}
+
+def latest_per_project(full_only=False):
+    best = {}
+    for p in ratings_glob():
+        if full_only and front(p).get("depth", "").split()[:1] != ["full"]: continue
+        m = re.match(r"(.*?)(?:-(\d+))?$", p.stem); key = (m.group(1), int(m.group(2) or 1))
+        if p.parent.name not in best or key > best[p.parent.name][0]: best[p.parent.name] = (key, p)
+    return {k: v[1] for k, v in best.items()}
+
+def export_page(p):
+    t = p.read_text(errors="ignore"); d = front_text(t); v = d.get("verdict", "").split()[0] if d.get("verdict") else ""
+    r = d.get("rubric", "").split(); r = r[0] if r else ""
+    out = [f"# {d.get('project', p.parent.name)}", "",
+           f"**Verdict {v}: {VERDICT_LABEL.get(v, v)}.** Rated {d.get('rated', '')} at {d.get('commit', 'unrecorded')}.",
+           f"Project: {d.get('url', '')}"]
+    if r < RUBRIC: out += ["", f"*Earlier rubric ({r or 'unrecorded'}): the rubric has changed since this rating.*"]
+    out += ["", "## Summary", "", section(t, "Summary").strip(), "", "## Failed facts", ""]
+    fixes = section(t, "Core fixes"); failed = [(n, l) for n, (val, l) in sorted(facts(t).items()) if val == "no"]
+    cat = catalog()
+    for n, line in failed:
+        line = line.strip()
+        if not DOC_LINK.search(line):
+            link = next((DOC_LINK.search(l).group(0) for l in fixes.splitlines() if re.search(rf"\bF{n}\b", l) and DOC_LINK.search(l)), "")
+            if link: line += f" Docs: {link}"
+            elif cat.get(n): line += " Docs: " + ", ".join(f"https://docs.typesafe.ai/{s}.md" for s in cat[n])
+        out.append(line)
+    if not failed: out.append("None.")
+    if fixes.strip():
+        out += ["", "## Core fixes (untested: from reading the code, not run against it)", "", fixes.strip()]
+    return "\n".join(out) + "\n", d, r
+
+def export(outdir):
+    outdir = pathlib.Path(outdir); pages = {}; rows = []
+    # Only full reads are published; quick (extract) ratings stay in the library.
+    for slug, p in sorted(latest_per_project(full_only=True).items()):
+        text, d, r = export_page(p); pages[slug] = (p, text)
+        v = d.get("verdict", "").split()[0] if d.get("verdict") else ""
+        rows.append(f"| [{d.get('owner', '')}/{d.get('project', slug)}]({slug}.md) | {v} {VERDICT_LABEL.get(v, '')} | {d.get('rated', '')} | {r or 'unrecorded'} |")
+    tpl = SKILL / "ratings-template"
+    readme = (tpl / "README.md").read_text().rstrip("\n") + "\n\n## Ratings\n\n| Project | Verdict | Rated | Rubric |\n|---|---|---|---|\n" + "\n".join(rows) + "\n"
+    pt = LIB / "private-terms.txt"; pats = []
+    if pt.exists():
+        pats = [re.compile(l.strip(), re.I) for l in pt.read_text().splitlines() if l.strip() and not l.lstrip().startswith("#")]
+    else:
+        print(f"warning: {pt} not found; no private-term scan", file=sys.stderr)
+    hits = []
+    for name, text in [(f"{s}.md", x[1]) for s, x in pages.items()] + [("README.md", readme)]:
+        for i, line in enumerate(text.splitlines(), 1):
+            for pat in pats:
+                if pat.search(line):
+                    src = ""
+                    if name != "README.md":
+                        sp = pages[name[:-3]][0]
+                        j = next((k for k, l in enumerate(sp.read_text(errors="ignore").splitlines(), 1) if l.strip() and l.strip() in line), None)
+                        src = f" (source {sp}" + (f":{j}" if j else "") + ")"
+                    hits.append(f"{name}:{i}: matches private term /{pat.pattern}/{src}")
+    for slug, (sp, _) in pages.items():
+        for i, line in enumerate(sp.read_text(errors="ignore").splitlines(), 1):
+            for pat in pats:
+                if pat.search(line):
+                    hits.append(f"{sp}:{i}: matches private term /{pat.pattern}/ (in the source rating, exported or not; review before publishing)")
+    if hits:
+        sys.exit("export refused; nothing written:\n- " + "\n- ".join(hits))
+    outdir.mkdir(parents=True, exist_ok=True)
+    for s, (_, text) in pages.items(): (outdir / f"{s}.md").write_text(text)
+    (outdir / "README.md").write_text(readme)
+    shutil.copy(tpl / "LICENSE", outdir / "LICENSE")
+    print(f"exported {len(pages)} pages to {outdir}")
+
 def blind(exclude, out):
     out = pathlib.Path(out)
     owner, proj = exclude.lower().split("/", 1)
@@ -156,7 +385,7 @@ def similar(lineage, stage, limit, exclude=None):
         if s: hits.append((s, p, d))
     hits.sort(key=lambda h: -h[0])
     for s, p, d in hits[:limit]:
-        old = "" if d.get("rubric", "") >= "2026-09-28" else "  [old rubric: context only, not precedent]"
+        old = "" if d.get("rubric", "") >= RUBRIC else "  [old rubric: context only, not precedent]"
         print(f"{p}  verdict={d.get('verdict')}  lineage={d.get('lineage')}  stages={d.get('stages')}{old}")
     if not hits: print("no similar ratings yet")
 
@@ -203,19 +432,30 @@ def list_add(name, entries):
     print(dest); print(latest)
 
 ap = argparse.ArgumentParser()
-ap.add_argument("cmd", choices=["add", "index", "similar", "check", "blind", "migrate", "list-add"])
+ap.add_argument("cmd", choices=["add", "index", "similar", "check", "blind", "migrate", "list-add", "stale", "export", "migrate-fields", "fill-docs"])
 ap.add_argument("file", nargs="?")
 ap.add_argument("list_file", nargs="?")
 ap.add_argument("--lineage"); ap.add_argument("--stage"); ap.add_argument("--limit", type=int, default=3); ap.add_argument("--exclude"); ap.add_argument("--out")
-a = ap.parse_args()
-if a.cmd == "add": add(a.file)
+ap.add_argument("--link-docs", action="store_true"); ap.add_argument("--evidence"); ap.add_argument("--supersedes")
+a = ap.parse_intermixed_args()
+if a.cmd == "add":
+    if not a.file: sys.exit("add needs <rating.md>")
+    add(a.file, a.link_docs, a.evidence, a.supersedes)
 elif a.cmd == "check":
-    problems = check(a.file); print("ok" if not problems else "- " + "\n- ".join(problems)); sys.exit(1 if problems else 0)
+    problems = check(a.file, evidence=a.evidence)
+    for w in WARNINGS: print("warning: " + w, file=sys.stderr)
+    print("ok" if not problems else "- " + "\n- ".join(problems)); sys.exit(1 if problems else 0)
 elif a.cmd == "blind":
     if not (a.exclude and a.out): sys.exit("blind needs --exclude owner/repo and --out DIR")
     blind(a.exclude, a.out)
 elif a.cmd == "index": print(f"index: {index()} ratings")
 elif a.cmd == "migrate": migrate()
+elif a.cmd == "stale": stale()
+elif a.cmd == "export":
+    if not a.file: sys.exit("export needs <outdir>")
+    export(a.file)
+elif a.cmd == "migrate-fields": migrate_fields()
+elif a.cmd == "fill-docs": fill_docs_existing()
 elif a.cmd == "list-add":
     if not (a.file and a.list_file): sys.exit("list-add needs <list-name> <entries.tsv>")
     list_add(a.file, a.list_file)

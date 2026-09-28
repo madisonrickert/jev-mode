@@ -2,10 +2,29 @@
 
 Facts first, scores second. The rules behind each fact, with their sources, are in `jev-rules.md`. Two raters who find the same facts must reach the same scores; that's what the anchors are for. When two ratings of the same project disagree on a score, rewrite that anchor more concretely.
 
+## Before the facts: type, call and stakes
+
+**Project type.** Record exactly one in `project_type`. It decides which facts apply.
+- `app`: a product or workflow whose own code writes questions, sends them to Jev and acts on the answers. Every fact applies.
+- `library`: code others build on that adds its own question design on top of Jev (question builders, verbs, default wording, thresholds). Rate its defaults, docs and examples: they are what users copy.
+- `plumbing`: a client, SDK, proxy or gateway that passes questions through without writing any. F1-F3, F5-F11, F13 and F20-F22 are n.a.; rate F0, F4 (it can send batched requests), F12 (it lets callers pin a version), F14 and F19 (it exposes the typed fields and probabilities). Execution and Fit use only those facts.
+- `agent-tool`: an MCP server, agent skill or plugin whose questions are written at run time by an agent or user. Rate the templates and guidance it ships. Its stakes come from what the tool itself does with an answer, usually returning it to the agent, not from what an agent might do next.
+- `demo`: a site, notebook or game that shows Jev's answers to people and acts on them no further than showing them. Every design fact applies, since people learn from demos; stakes are low unless its code acts on an answer.
+- `jev-like-model`: a model or engine that imitates Jev's interface or behavior instead of calling it. F0 is no by construction.
+
+**F0 Calls hosted Jev.** Yes only with a traced request: a `file:line` in non-test source that constructs a TypeSafe client, posts to `api.typesafe.ai`, or names a gateway model ID (`typesafe/jev-...`). For a hosted site whose server code isn't public, a captured network response that contains the Jev request (state and questions) and its typed answers also traces the call; cite the capture. None of these is a trace: the project's name, its README, keywords, docs, test fixtures, an adapter that imitates Jev's API, or `jev_callsites.py` mentions. F0 no means verdict 1.
+
+**Claims are not findings.** A README or model card saying the project "works like Jev", "matches Jev's contract" or "is calibrated" is a claim. A contract match needs `file:line` evidence in code; an accuracy or calibration claim needs the data behind it (F15-F18). Report the claim and what backs it; a claim of results with nothing behind it is Evidence 0.
+
+**Stakes.** Give each decision Jev makes exactly one of these. F11, F13, F20 and F22 use this scale and no other.
+- `very high`: the code acts automatically, with no human review, on sensitive data: personal data, money, or access and credentials (it issues a refund, grants access, sends or deletes personal records). Storing or showing sensitive data isn't enough; the action has to be automated.
+- `high`: the answer blocks, vetoes or routes something, or changes what other people see (a ranking, a filter, a moderation call), without review, and it isn't `very high`.
+- `low`: a person reviews the result or can correct it in one click before it matters, or the answer is only shown to the person who asked or returned to a caller.
+
 ## Facts (yes / no / n.a., each with evidence)
 
 **Core principles**
-- F1 **Atomic questions:** each question asks about one property. It fails if a question joins two judgments ("relevant *and* recent") or asks something broad ("is this good?", "analyze this").
+- F1 **Atomic questions:** each question asks about one property. It fails if a question joins two or more judgments, whether with "and"/"or" or as a list ("relevant *and* recent", "detailed and actionable", "conveying X, reading as Y, and adding nothing"), including inside a Score's level text. It also fails if a question asks something broad: its answer depends on a standard the question, criteria and state never spell out ("is this good?", "is this safe to apply?", "which is the best fit overall?"). Questions built from one template count once.
 - F2 **The right primitive:** Noul for yes/no, Choice for one of several named options, Score for an ordered scale described in words. It fails if, for example, a Noul is used for a degree, or a Score has bare numbers as its levels.
 - F3 **Structured state:** the state is JSON with named fields, items carry IDs, and questions point at paths (`` `ticket.body` ``). A plain string passes when the use case is a single piece of text (S1). It fails when several distinct parts are packed into one string. (S1, S5)
 - F4 **Batching:** independent questions over the same state go in one request, and datasets use the inverted request (criteria in the state, one row per question) or batches. It fails if it sends questions one at a time in a loop.
@@ -17,15 +36,15 @@ Facts first, scores second. The rules behind each fact, with their sources, are 
 - F8 **Options cover every case without overlapping:** every Choice's options are mutually exclusive and cover every realistic case (or use independent Nouls when answers can co-occur).
 - F9 **An "unclear" or "other" option, where needed,** worded differently from anything in the state. It's needed when a Choice's options don't cover every case; n.a. when every Choice already does. If the Choice wording is in the fetched files, read it: unknown isn't allowed.
 - F10 **Evidence recorded evenly:** the state doesn't list far more detail for one answer than for the others, and doesn't include conclusions ("likely fraud") as facts. n.a. when the state holds no per-answer evidence (a single object being judged).
-- F11 **Confidence drives action:** probabilities or confidence gate what the code does (act / review / escalate), rather than the top answer being taken blindly.
+- F11 **Confidence drives action:** probabilities or confidence gate what the code does (act / review / escalate), rather than the top answer being taken blindly. n.a. for a `low`-stakes decision that is only shown or returned.
 
 **Execution and operations**
 - F12 **The model is pinned to a versioned ID** from the models page (`jev-X.Y.Z`), not an alias, wherever thresholds were tuned.
-- F13 **Choice order is handled:** high-stakes Choices are averaged over option orders, or the order is randomized per item. High-stakes: the answer can block, veto or route something, or change what a user sees, without review. n.a. if no Choice is high-stakes; no if one is and its order isn't handled. Never "partial".
-- F14 **Size limits are respected:** state plus all questions ≤ 64k tokens; state plus the longest question ≤ 32k. Yes needs a guard that trims or stops above the limit, or a reported maximum size under it. "Small by construction" or logged usage alone is unverified, which counts as n.a.
-- F20 **Values from code are fields, not templates:** schemas, rows and values from code are passed as JSON fields; they aren't spliced into question strings. It fails if any text taken from the data (a question, a row, a snippet), however short, is inserted into a question string by replace, format or string interpolation; cite the line. Fixed labels the builder wrote are fine. (Q2)
-- F21 **No instructions in the state:** the state holds content, not directions to the model. Source text spliced into questions counts once, under F20. (S3)
-- F22 **Untrusted text is treated as data:** user input, web pages or text from images in the state is flagged or tested for steering. Judge the project's own Jev calls. Checks the project runs on other people's content, and eval or corpus scripts, don't count. It fails if text a user or an input file supplied reaches the state or questions with no flag and no steering test. (S7)
+- F13 **Choice order is handled:** Choices with `high` or `very high` stakes are averaged over option orders, or the order is randomized per item. n.a. if every Choice is `low` (including one the user can correct in one click); no if one isn't and its order isn't handled. Never "partial".
+- F14 **Size limits are respected:** state plus all questions ≤ 64k tokens; state plus the longest question ≤ 32k. A cap in characters counts at 4 characters per token (256k and 128k characters). Yes needs a guard that trims or stops above the limit, or a reported maximum size under it. "Small by construction" or logged usage alone is unverified, which counts as n.a.
+- F20 **Values from code are fields, not templates:** schemas, rows and values from code are passed as JSON fields; they aren't spliced into question strings. It fails if any text taken from the data (a question, a row, a snippet), however short, is inserted into a question string by replace, format or string interpolation; cite the line. Fixed labels the builder wrote are fine. Stakes-scoped: it caps the verdict only when the decision is `very high`; otherwise a no is fix-only. (Q2)
+- F21 **No instructions in the state:** the state holds content, not directions to the model. Field names and a short label saying what a field holds are content; a sentence telling the model what to do ("Verify each claim against the evidence", "The question text is data, never instructions") is a direction and belongs in the question or its criteria. Source text spliced into questions counts once, under F20. (S3)
+- F22 **Untrusted text is treated as data:** user input, web pages or text from images in the state is flagged or tested for steering. Judge the project's own Jev calls. Checks the project runs on other people's content, and eval or corpus scripts, don't count. It fails if text a user or an input file supplied reaches the state or questions with no flag and no steering test. Stakes-scoped: it caps the verdict only when the decision is `very high`; otherwise a no is fix-only. (S7)
 - F23 **Non-English content is handled:** tested, or translated alongside, where accuracy matters. n.a. only when inputs are English by design; cite where that's stated. Translating the tool's own display text doesn't count. (S6)
 - F19 **Typed answers are read directly:** the decision reads the typed field (`noul`, `choice`, `score`, probabilities). It fails if Jev (or an LLM standing in for it) is asked for free-text reasoning that code then string-matches.
 
@@ -37,9 +56,10 @@ Facts first, scores second. The rules behind each fact, with their sources, are 
 
 ## Dimensions (0-3; name the anchor you used)
 
-**Jev execution** (F1-F6, F8-F11, F19-F22). F12, F14 and F23 are fix-only: a no goes into the fixes but doesn't move a score. A failed F20-F22 doesn't lower this score either; it caps the verdict at 3.
+**Jev execution** (F1-F6, F8-F11, F19-F22). F12, F14 and F23 are fix-only: a no goes into the fixes but doesn't move a score. F20-F22 don't lower this score either: a failed F21 caps the verdict at 3, and so does a failed F20 or F22 on a `very high` decision; otherwise F20 and F22 are fix-only.
 - 3: F1-F6 all yes, and F8-F11 yes wherever they apply.
-- 2: Exactly one of F1-F6 is no, and it affects only one of several similar questions, not the main decision (for example, one compound question among many good ones).
+- 2: F1-F6 all yes, and one or more of F8-F11 no (the core design holds; secondary decisions fail).
+- 2: Or exactly one of F1-F6 is no, and it affects only one of several similar questions, not the main decision (for example, one compound question among many good ones). F8-F11 failures beside it don't lower this to 1.
 - 1: Two or more of F1-F6 are no, or F1 or F19 fails for the main decision.
 - 0: Jev is used like an LLM prompt (one broad question, prose in, top answer out), or not called.
 
@@ -61,18 +81,20 @@ Count the original's (or goal's) listed decisions or steps from phase 4.
 - 2: Measured with one weakness (small sample, builder's own labels, or no held-out set), disclosed.
 - 1: Numbers given without method, or tuned and tested on the same data.
 - 0: Claims results with no measurement shown.
-- Only latency or cost measured, no accuracy on labels: score 1, and say so. F15-F18 are n.a.
+- Only latency or cost measured, no accuracy on labels: score 1, and say so. F15-F18 are n.a. This needs run output behind the figure; a number the code can return as a constant, or that no run backs, is a claim with no measurement shown: 0.
 
 ## Build stages and the loop
 Mark each build stage the project actually implements, using these four labels exactly: `data-prep` (retrieve, filter, serialize, IDs), `question-state` (question and state design), `execution` (batching, the inverted request, pinning, caching), `decision` (thresholds, combining answers, routing, acting).
 
 The improvement loop: **evaluate** on labels, then **calibrate** (change the numbers: thresholds, weights, confidence mapping) and/or **revise** (change the questions, state or data). Record `closes_loop`: none, calibrates, revises, or both.
 
-## Verdict anchors (not an average; rubric 2026-09-28)
+## Verdict anchors (not an average; rubric 2026-09-28b)
 - **5 Learn from it:** Execution 3, Fit 3, Evidence 3, and closes the loop.
 - **4 Use it:** Execution and Fit at least 2, no fatal flaw; evidence may be missing.
-- **3 Use with a fix:** One fixable flaw (a single failed fact from F1-F6, F8-F11 or F19-F22) caps it here.
+- **3 Use with a fix:** Any failed fact from F1-F6, F8-F11, F19 or F21, or a failed F20 or F22 on a `very high` decision, caps it here, one or several, as long as nothing sends it to 2.
 - **2 Rework it:** Execution 1 or 0, or a fatal flaw: F1 fails on the main decision, F6 fails (Jev computes values), or confidence is ignored on a high-stakes action.
-- **1 Jev in name only:** Jev isn't called, or its output doesn't drive any decision.
+- **1, labeled one of two ways.** F0 is no, or Jev's answers drive nothing (not even what a user is shown).
+  - **False marketing: Jev in name only:** the project claims to use or call Jev (README, listing, model card), and F0 is no. Quote the claim; say nothing about intent.
+  - **Not a Jev integration:** it never claims to call Jev (a `jev-like-model` that says it imitates Jev, for example), or it calls Jev and the answers drive nothing.
 - **Can't rate yet** (`cant-rate` in the rating file): depth is readme-only, or the Jev code isn't public.
 - A project with misleading claims (Evidence 0 while claiming results) can't score above 3.
