@@ -48,7 +48,7 @@ Answer every fact in `rubric.md` as **yes / no / not applicable**, with evidence
 - Offer to draft the fixed version (for example, rewritten questions). Don't draft it unless asked.
 
 ## 9. Log
-`python3 scripts/library.py add <rating.md>` first runs `library.py check`, which refuses a rating with a missing fact, an unknown with no `--also` fetch noted, no `rubric:` date, or a verdict above what the facts allow. Fix what it lists and rerun. It then saves the rating as `ratings/YYYY-MM-DD-<owner>-<repo>.md` and rebuilds `index.md`. Use this template:
+`python3 scripts/library.py add <rating.md>` first runs `library.py check`, which refuses a rating with a missing fact, an unknown with no `--also` fetch noted, no `rubric:` date, or a verdict above what the facts allow. Fix what it lists and rerun. It then saves the rating as `projects/<slug>/YYYY-MM-DD.md` (a second same-day rating is `YYYY-MM-DD-2.md`, and so on) and rebuilds `index.md`. The slug comes from the frontmatter `url`: a GitHub project keeps its owner and repo case (`owner__repo`); a Hugging Face model is `hf__user__model`; anything else is `site__domain`. Use this template:
 
 ```markdown
 ---
@@ -64,6 +64,7 @@ stages: [data-prep, question-state, execution, decision]   # only these four lab
 closes_loop: none | calibrates | revises | both
 verdict: 5 | 4 | 3 | 2 | 1 | cant-rate   # cant-rate = "Can't rate yet"
 scores: {execution: n, fit: n, coverage: n, evidence: n}
+via: list:<name>   # optional; only if this rating came off a curated list rather than a direct pick
 ---
 ## Summary
 One paragraph: what it does with Jev, and the verdict in plain words.

@@ -2,17 +2,29 @@
 
 Location: $JEVALUATE_LIBRARY or ~/.claude/jevaluate-library/ (created on first use).
 Usage:
-  python3 library.py add <rating.md>          copy into ratings/ (never overwrites) and rebuild the index
-  python3 library.py index                    rebuild index.md from ratings/
+  python3 library.py add <rating.md>          copy into projects/<slug>/ (never overwrites) and rebuild the index
+  python3 library.py index                    rebuild index.md from projects/*/*.md
   python3 library.py similar [--lineage X] [--stage Y] [--limit 3] [--exclude owner/repo]
   python3 library.py check <rating.md>        check facts, fields and the verdict cap (add runs this first)
   python3 library.py blind --exclude owner/repo --out DIR
                                               copy the library without that project, for a blind re-rate
+  python3 library.py migrate                  move ratings/*.md into projects/<slug>/ (idempotent)
+  python3 library.py list-add <list> <entries.tsv>
+                                              save a dated copy of a screened list under lists/<list>/
+
+Layout:
+  projects/<slug>/<rated>.md         one rating; a second same-day rating is <rated>-2.md, etc.
+  projects/<slug>/<date>-evidence/   supporting files for a rating; never read as a rating
+  lists/<name>/entries-<date>.tsv, entries.tsv (latest)
+Slugs: github.com/<owner>/<repo> -> <owner>__<repo> (case kept); huggingface.co/<user>/<model> ->
+hf__<user>__<model>; any other URL -> site__<domain> (no www.), plus __<path segments> if the URL has one.
 """
-import os, sys, re, shutil, pathlib, argparse
+import os, sys, re, shutil, pathlib, argparse, datetime
+from urllib.parse import urlparse
 
 LIB = pathlib.Path(os.environ.get("JEVALUATE_LIBRARY", pathlib.Path.home() / ".claude/jevaluate-library"))
 RAT = LIB / "ratings"
+PROJ = LIB / "projects"
 
 def front(p):
     t = p.read_text(errors="ignore"); m = re.match(r"---\n(.*?)\n---", t, re.S); d = {}
@@ -21,12 +33,36 @@ def front(p):
             k, v = line.split(":", 1); d[k.strip()] = v.strip()
     return d
 
+def slug_for(url):
+    if not url:
+        return "unknown"
+    u = urlparse(url if "://" in url else "https://" + url)
+    host = u.netloc.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    segs = [s for s in u.path.split("/") if s]
+    if host == "github.com" and len(segs) >= 2:
+        return f"{segs[0]}__{segs[1]}"
+    if host == "huggingface.co" and len(segs) >= 2:
+        return f"hf__{segs[0]}__{segs[1]}"
+    slug = f"site__{host}"
+    if segs:
+        slug += "__" + "__".join(segs)
+    return slug
+
+def ratings_glob():
+    return PROJ.glob("*/*.md")
+
 def index():
-    RAT.mkdir(parents=True, exist_ok=True)
-    rows = ["| Rated | Project | Owner | Commit | Lineage | Stages | Loop | Depth | Verdict | File |", "|---|---|---|---|---|---|---|---|---|---|"]
-    for p in sorted(RAT.glob("*.md"), reverse=True):
+    PROJ.mkdir(parents=True, exist_ok=True)
+    rows = ["| Rated | Project | Owner | Commit | Lineage | Stages | Loop | Depth | Verdict | Via | File |",
+            "|---|---|---|---|---|---|---|---|---|---|---|"]
+    files = sorted(ratings_glob(), key=lambda p: (front(p).get("rated", ""), str(p)), reverse=True)
+    for p in files:
         d = front(p)
-        rows.append(f"| {d.get('rated','')} | {d.get('project','')} | {d.get('owner','')} | {d.get('commit','')[:10]} | {d.get('lineage','')} | {d.get('stages','')} | {d.get('closes_loop','')} | {d.get('depth','')} | {d.get('verdict','')} | ratings/{p.name} |")
+        via = d.get("via", "").strip() or "direct"
+        rel = f"projects/{p.parent.name}/{p.name}"
+        rows.append(f"| {d.get('rated','')} | {d.get('project','')} | {d.get('owner','')} | {d.get('commit','')[:10]} | {d.get('lineage','')} | {d.get('stages','')} | {d.get('closes_loop','')} | {d.get('depth','')} | {d.get('verdict','')} | {via} | {rel} |")
     (LIB / "index.md").write_text("# Jevaluate ratings\n\nNewest first. One file per rating; re-ratings are new files.\n\n" + "\n".join(rows) + "\n")
     return len(rows) - 2
 
@@ -37,11 +73,12 @@ def add(src):
         sys.exit("not added; fix these and rerun:\n- " + "\n- ".join(problems))
     for k in ("project", "owner", "rated", "verdict"):
         if not d.get(k): sys.exit(f"missing front-matter field: {k}")
-    slug = re.sub(r"[^a-z0-9]+", "-", f"{d['owner']}-{d['project']}".lower()).strip("-")
-    dest = RAT / f"{d['rated']}-{slug}.md"; RAT.mkdir(parents=True, exist_ok=True)
+    slug = slug_for(d.get("url", ""))
+    pdir = PROJ / slug; pdir.mkdir(parents=True, exist_ok=True)
+    dest = pdir / f"{d['rated']}.md"
     n = 2
     while dest.exists():
-        dest = RAT / f"{d['rated']}-{slug}-{n}.md"; n += 1
+        dest = pdir / f"{d['rated']}-{n}.md"; n += 1
     shutil.copy(src, dest); print(dest); print(f"index: {index()} ratings")
 
 RUBRIC = "2026-09-28"
@@ -96,21 +133,22 @@ def check(src):
     return err
 
 def blind(exclude, out):
-    out = pathlib.Path(out); (out / "ratings").mkdir(parents=True, exist_ok=True)
+    out = pathlib.Path(out)
     owner, proj = exclude.lower().split("/", 1)
     hit = re.compile(re.escape(proj) + "|" + re.escape(exclude), re.I); kept = 0
-    for p in RAT.glob("*.md"):
+    for p in ratings_glob():
         d = front(p)
         if d.get("owner", "").lower() == owner and d.get("project", "").lower() == proj: continue
         lines = ["[redacted: mentions the project under test]" if hit.search(l) and not l.startswith(("project:", "url:", "owner:")) else l
                  for l in p.read_text(errors="ignore").splitlines()]
-        (out / "ratings" / p.name).write_text("\n".join(lines) + "\n"); kept += 1
+        dest_dir = out / "projects" / p.parent.name; dest_dir.mkdir(parents=True, exist_ok=True)
+        (dest_dir / p.name).write_text("\n".join(lines) + "\n"); kept += 1
     print(f"{kept} ratings copied to {out}, {exclude} removed and mentions redacted.")
     print(f"Rater runs with: JEVALUATE_LIBRARY={out}")
 
 def similar(lineage, stage, limit, exclude=None):
-    RAT.mkdir(parents=True, exist_ok=True); hits = []
-    for p in sorted(RAT.glob("*.md"), reverse=True):
+    PROJ.mkdir(parents=True, exist_ok=True); hits = []
+    for p in sorted(ratings_glob(), reverse=True):
         d = front(p); s = 0
         if exclude and f"{d.get('owner','')}/{d.get('project','')}".lower() == exclude.lower(): continue
         if lineage and lineage.split(":")[-1] in d.get("lineage", ""): s += 2
@@ -122,7 +160,52 @@ def similar(lineage, stage, limit, exclude=None):
         print(f"{p}  verdict={d.get('verdict')}  lineage={d.get('lineage')}  stages={d.get('stages')}{old}")
     if not hits: print("no similar ratings yet")
 
-ap = argparse.ArgumentParser(); ap.add_argument("cmd", choices=["add", "index", "similar", "check", "blind"]); ap.add_argument("file", nargs="?")
+def migrate():
+    if not RAT.exists() or not any(RAT.glob("*.md")):
+        print("ratings/ is empty or missing; nothing to migrate")
+        print(f"index: {index()} ratings")
+        return
+    pat = re.compile(r"^(.*?)(?:-(\d+))?\.md$")
+    groups = {}
+    for p in RAT.glob("*.md"):
+        d = front(p)
+        rated = d.get("rated", "")
+        slug = slug_for(d.get("url", ""))
+        m = pat.match(p.name)
+        base, num = (m.group(1), int(m.group(2)) if m.group(2) else 1) if m else (p.name, 1)
+        groups.setdefault((rated, slug), []).append((base, num, p))
+    PROJ.mkdir(parents=True, exist_ok=True)
+    moved = 0
+    for (rated, slug), items in groups.items():
+        items.sort(key=lambda x: (x[0], x[1]))
+        pdir = PROJ / slug; pdir.mkdir(parents=True, exist_ok=True)
+        for i, (base, num, p) in enumerate(items):
+            name = f"{rated}.md" if i == 0 else f"{rated}-{i+1}.md"
+            dest = pdir / name
+            shutil.move(str(p), str(dest))
+            moved += 1
+    if RAT.exists() and not any(RAT.iterdir()):
+        RAT.rmdir()
+    print(f"migrated {moved} ratings")
+    print(f"index: {index()} ratings")
+
+def list_add(name, entries):
+    entries = pathlib.Path(entries)
+    today = datetime.date.today().isoformat()
+    ldir = LIB / "lists" / name; ldir.mkdir(parents=True, exist_ok=True)
+    dest = ldir / f"entries-{today}.tsv"
+    n = 2
+    while dest.exists():
+        dest = ldir / f"entries-{today}-{n}.tsv"; n += 1
+    shutil.copy(entries, dest)
+    latest = ldir / "entries.tsv"
+    shutil.copy(entries, latest)
+    print(dest); print(latest)
+
+ap = argparse.ArgumentParser()
+ap.add_argument("cmd", choices=["add", "index", "similar", "check", "blind", "migrate", "list-add"])
+ap.add_argument("file", nargs="?")
+ap.add_argument("list_file", nargs="?")
 ap.add_argument("--lineage"); ap.add_argument("--stage"); ap.add_argument("--limit", type=int, default=3); ap.add_argument("--exclude"); ap.add_argument("--out")
 a = ap.parse_args()
 if a.cmd == "add": add(a.file)
@@ -132,4 +215,8 @@ elif a.cmd == "blind":
     if not (a.exclude and a.out): sys.exit("blind needs --exclude owner/repo and --out DIR")
     blind(a.exclude, a.out)
 elif a.cmd == "index": print(f"index: {index()} ratings")
+elif a.cmd == "migrate": migrate()
+elif a.cmd == "list-add":
+    if not (a.file and a.list_file): sys.exit("list-add needs <list-name> <entries.tsv>")
+    list_add(a.file, a.list_file)
 else: similar(a.lineage, a.stage, a.limit, a.exclude)
