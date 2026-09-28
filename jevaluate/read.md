@@ -75,14 +75,18 @@ scores: {execution: n, fit: n, coverage: n, evidence: n}
 via: direct | list:<name>   # direct = someone named it; list:<name> = it came off a curated list
 ---
 ## Summary
-One paragraph: what it does with Jev, and the verdict in plain words.
+Three sentences: what it does with Jev; what it does well; what holds it back.
 ## Stats
 ## Facts (with evidence)
-- F0 Calls hosted Jev — yes. <file:line of the traced call, or the capture>
-- F1 <name> — yes. <file:line or quote>   # one line per fact, F1-F23; value is yes, no, n.a. or unknown; a no links its TypeSafe page
-## Scores (anchor named for each)
+- F0 Calls hosted Jev — yes. <what the call is, in at most 20 words> (`file:line`)
+- F1 <name> — no. <the finding, in at most 20 words> (`file:line`). <TypeSafe page>
+# One line per fact, F0-F23: the value, one finding of at most 20 words, then the file:line.
+# A no ends with its TypeSafe page. Anything that needs more words goes in Verdict and reasoning.
+## Scores
+- <Dimension> <n> of 3: <what that score means for this project, in plain words>, <the facts behind it, by name>.   # the anchor's meaning, never a quote of it
 ## Compared with
 ## Verdict and reasoning
+At most five sentences: why this verdict and not the one above it, and any borderline call.
 ## Core fixes
 ## Coverage
 - <path> — read | skipped: <reason>   # one line per manifest file
