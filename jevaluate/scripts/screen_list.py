@@ -41,7 +41,7 @@ def parse_readme(text):
         if not m or sec in (None, "Contents", "Contribute", "License"): continue
         name, url, desc = m.groups(); url = url.strip()
         g = re.match(r"https?://github\.com/([^/]+)/([^/#?]+)", url)
-        repo = (g.group(1) + "/" + g.group(2)).removesuffix(".git") if g else ""
+        repo = re.sub(r"\.git$", "", g.group(1) + "/" + g.group(2)) if g else ""
         key = repo.lower() or url
         if key in seen: continue
         seen.add(key)
