@@ -26,7 +26,7 @@ As controller, run `python3 jevaluate/scripts/library.py add <rating> --evidence
 Send any verdict move of 2 or more points, and any rubric line a rater called ambiguous, to a fresh reviewer subagent given only the facts. Answer "what would X get?" from that re-verdict, never from memory.
 
 ## 6. Calibrate
-- Run the judgment eval (`jevaluate/evals/`, see its README) before and after any rubric change. Tune only on tuning-set failures, never on held-out cases.
+- Run the judgment eval (`jevaluate/evals/`, see its README; if the folder isn't there yet, say so and skip this step) before and after any rubric change. Tune only on tuning-set failures, never on held-out cases.
 - When raters disagree on a fact across re-rates, tighten that fact's anchor, then re-run the eval.
 - Test wording with `claude -p --setting-sources "" --strict-mcp-config --tools "" --system-prompt-file <f> --model <m> --effort <e> --output-format json < prompt.md` (`--bare` fails on OAuth logins). Agent token logs miss these calls; add each call's `usage` to your spend.
 - Measure a cheaper rating mode on one real repo before building it. A quick mode measured at 78k tokens left 10 of 24 facts unknown and was dropped.

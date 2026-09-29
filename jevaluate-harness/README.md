@@ -23,7 +23,7 @@ For a different LLM rating skill, this one won't run, but its pattern carries ov
 3. Give every rater the same brief: its own folder, facts before the old rating.
 4. Log ratings into the shared library one at a time, by one controller.
 5. Send any verdict move of 2 or more points to a reviewer that sees only the facts.
-6. Run the judgment eval before and after any rubric change; log each round in `jevaluate/CALIBRATION.md`.
+6. Run the judgment eval before and after any rubric change (the eval ships in the next update); log each round in `jevaluate/CALIBRATION.md`.
 7. Export a preview, check every page for private context, then push once.
 
 ## Install and use

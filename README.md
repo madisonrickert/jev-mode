@@ -14,6 +14,9 @@ Install a skill by copying its folder into `~/.claude/skills/`:
 git clone https://github.com/tiffygk/jev-mode
 cp -r jev-mode/jevaluate ~/.claude/skills/
 cp -r jev-mode/jev-lens ~/.claude/skills/
+cp -r jev-mode/jevaluate-harness ~/.claude/skills/
 ```
+
+Ratings of community Jev projects are in [`ratings/`](ratings/), released under CC0: use and change them freely.
 
 Not affiliated with TypeSafe. The skills are licensed under [PolyForm Noncommercial 1.0.0](LICENSE.md): free for personal and noncommercial use, with credit. Company or paid use needs a commercial license: [open an issue](https://github.com/tiffygk/jev-mode/issues).
