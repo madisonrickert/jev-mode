@@ -5,7 +5,7 @@ Rate one project. Work through the phases in order; each phase's output goes int
 ## 1. Intake
 Record: project name, URL, **owner** (the GitHub owner, or the publisher of a post), today's date, and the **commit or version rated** (`git ls-remote <url> HEAD`, or the post's date). A rating without a commit can't be compared later.
 
-Then record the **project type** (`rubric.md`, "Before the facts"): exactly one of `app`, `library`, `plumbing`, `agent-tool`, `demo`, `jev-like-model`. Decide it from what the code does, not from what the README calls it.
+Then record the **project type** (`rubric.md`, "Before the facts"): exactly one of `workflow`, `library`, `client`, `agent-tool`, `demo`, `jev-alternative`, `guide`, picked with its decision order. Decide it from what the code does, not from what the README calls it.
 
 ## 2. Read
 - `python3 scripts/coverage_manifest.py <owner/repo> <tmpdir>` writes `manifest.md` (every file that could hold Jev calls, decisions or evaluation), `meta.json` and the files themselves in `files/`. Read every file in the manifest that could change a fact or the verdict, and list each one in the rating's `## Coverage` section as `read` or `skipped: <reason>` (a binary, a lockfile, a generated file). `library.py check` refuses a rating whose Coverage leaves out a manifest file. Copy the manifest into the evidence folder with `library.py add --evidence <tmpdir>`.
@@ -53,7 +53,7 @@ Answer every fact in `rubric.md` that the project type leaves in play as **yes /
 - Offer to draft the fixed version (for example, rewritten questions). Don't draft it unless asked.
 
 ## 9. Log
-`python3 scripts/library.py add <rating.md> --evidence <tmpdir> --link-docs` first runs `library.py check`, which refuses a rating with a missing fact, an unknown with no `--also` fetch noted, no `rubric:` date, a verdict above what the facts allow, a missing `project_type`, `rater`, `effort` or `via`, a Coverage section that leaves out a manifest file, depth `full` with a skipped or partial read, or a failed fact with no TypeSafe page linked. A revision of a same-day rating uses `--supersedes <old file>`. Anything said privately (a call, a message) never goes in a rating: it is published by `library.py export`, which refuses lines matching the library's `private-terms.txt`. Fix what it lists and rerun. It then saves the rating as `projects/<slug>/YYYY-MM-DD.md` (a second same-day rating is `YYYY-MM-DD-2.md`, and so on) and rebuilds `index.md`. The slug comes from the frontmatter `url`: a GitHub project keeps its owner and repo case (`owner__repo`); a Hugging Face model is `hf__user__model`; anything else is `site__domain`. Use this template:
+`python3 scripts/library.py add <rating.md> --evidence <tmpdir> --link-docs` first runs `library.py check`, which refuses a rating with a missing fact, an unknown with no `--also` fetch noted, no `rubric:` date, a verdict above what the facts allow, a missing `project_type`, `rater`, `effort` or `via`, a Coverage section that leaves out a manifest file, depth `full` with a skipped or partial read, or a failed fact with no TypeSafe page linked. A revision of a same-day rating uses `--supersedes <old file>`. `export` publishes Summary, Facts, Scores, Verdict and reasoning, Core fixes and Coverage, so they state findings only: no revision history ("second pass", "raised from 1 in the first version"), no first-person rater choices ("I kept 2"; state the anchor you applied), no references to other ratings or the library outside Stats and `## Compared with`, people named only by their GitHub or Hugging Face handle, and one value per fact (not "no" plus "not applicable"). `check` refuses the common process-note phrases. Anything said privately (a call, a message) never goes in a rating: it is published by `library.py export`, which refuses lines matching the library's `private-terms.txt`. Fix what it lists and rerun. It then saves the rating as `projects/<slug>/YYYY-MM-DD.md` (a second same-day rating is `YYYY-MM-DD-2.md`, and so on) and rebuilds `index.md`. The slug comes from the frontmatter `url`: a GitHub project keeps its owner and repo case (`owner__repo`); a Hugging Face model is `hf__user__model`; anything else is `site__domain`. Use this template:
 
 ```markdown
 ---
@@ -62,7 +62,7 @@ url: <url>
 owner: <github owner>
 rated: YYYY-MM-DD
 rubric: 2026-09-28b   # the version in rubric.md's Verdict anchors heading
-project_type: app | library | plumbing | agent-tool | demo | jev-like-model
+project_type: workflow | library | client | agent-tool | demo | jev-alternative | guide
 rater: <model id>   # e.g. claude-sonnet-5-5
 effort: medium | high
 commit: <sha or version>
@@ -71,18 +71,23 @@ lineage: cookbook:<slug> | project:<owner/repo> | new
 stages: [data-prep, question-state, execution, decision]   # only these four labels, exactly as written
 closes_loop: none | calibrates | revises | both
 verdict: 5 | 4 | 3 | 2 | 1 | cant-rate   # cant-rate = "Can't rate yet"
+why: <at most 20 words: the one reason for this verdict, for the public index>
 scores: {execution: n, fit: n, coverage: n, evidence: n}
 via: direct | list:<name>   # direct = someone named it; list:<name> = it came off a curated list
 ---
 ## Summary
-One paragraph: what it does with Jev, and the verdict in plain words.
+Three sentences: what it does with Jev; what it does well; what holds it back.
 ## Stats
 ## Facts (with evidence)
-- F0 Calls hosted Jev — yes. <file:line of the traced call, or the capture>
-- F1 <name> — yes. <file:line or quote>   # one line per fact, F1-F23; value is yes, no, n.a. or unknown; a no links its TypeSafe page
-## Scores (anchor named for each)
+- F0 Calls hosted Jev — yes. <what the call is, in at most 20 words> (`file:line`)
+- F1 <name> — no. <the finding, in at most 20 words> (`file:line`). <TypeSafe page>
+# One line per fact, F0-F23: the value, one finding of at most 20 words, then the file:line.
+# A no ends with its TypeSafe page. Anything that needs more words goes in Verdict and reasoning.
+## Scores
+- <Dimension> <n> of 3: <what that score means for this project, in plain words>, <the facts behind it, by name>.   # the anchor's meaning, never a quote of it
 ## Compared with
 ## Verdict and reasoning
+At most five sentences: why this verdict and not the one above it, and any borderline call.
 ## Core fixes
 ## Coverage
 - <path> — read | skipped: <reason>   # one line per manifest file

@@ -33,13 +33,13 @@ Each dimension scores 0 to 3. The verdict comes from these rules, never an avera
 | **3&nbsp;Use&nbsp;with&nbsp;a&nbsp;fix**   | Right idea, fixable flaws                              | A failed core fact, or results claimed with no measurement. Unguarded user text and values spliced into questions cap a project here only when it acts on personal data, money or access with no review |
 | **2&nbsp;Rework&nbsp;it**                  | Core rules broken; results likely unreliable           | Execution 1 or 0, or a fatal flaw: Jev computes values, or confidence is ignored on a high-stakes action |
 | **1&nbsp;False&nbsp;marketing:&nbsp;Jev&nbsp;in&nbsp;name&nbsp;only** | Claims Jev, doesn't call it | No traced request to Jev, despite the claim |
-| **1&nbsp;Not&nbsp;a&nbsp;Jev&nbsp;integration** | Never claims to call Jev, or its answers drive nothing | A Jev-like model, for example |
+| **1&nbsp;Not&nbsp;a&nbsp;Jev&nbsp;integration** | Never claims to call Jev, or its answers drive nothing | A Jev alternative (a model that answers in Jev's place), for example |
 | **Can't&nbsp;rate&nbsp;yet**               | Too little visible to judge                            | README only, the Jev code isn't public, or no traced call to Jev could be found yet |
 
 ## How it works
 
 1. Pins the commit, fetches every file that could change the verdict, and tells you what the rating will cost. Above 200k tokens it asks before going on.
-2. Traces the request that proves the project calls Jev, names the project type (app, library, agent tool, demo and so on), then counts questions, thresholds and model pinning.
+2. Traces the request that proves the project calls Jev, names the project type (workflow, library, agent tool, demo and so on), then counts questions, thresholds and model pinning.
 3. If the project remixes a TypeSafe cookbook, checks it against the original: what it kept, what it dropped.
 4. Answers 24 facts, each yes, no, n.a. or unknown, citing a file:line or quote. Each decision gets a stakes level, so a flaw costs more where a wrong answer touches money, personal data or access.
 5. Scores four dimensions and sets the verdict. A checker script rejects any verdict the facts don't allow.
@@ -75,6 +75,10 @@ cp -r jev-mode/jevaluate ~/.claude/skills/
 ```
 
 Then ask Claude Code: `jevaluate https://github.com/valentynkit/jev-belay`. Use a Sonnet-class model at medium effort every time, so ratings stay comparable. A rating reads every file that could change its verdict, so it isn't cheap: about 45k tokens plus the size of those files, typically 100-160k for a small repo. Ratings save to `~/.claude/jevaluate-library/` (or `$JEVALUATE_LIBRARY`), never into the skill.
+
+## Published ratings
+
+Ratings of community projects are in [`ratings/`](../ratings/), under CC0.
 
 ## Limits
 
