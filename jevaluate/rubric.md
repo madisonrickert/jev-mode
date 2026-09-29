@@ -5,7 +5,7 @@ Facts first, scores second. The rules behind each fact, with their sources, are 
 ## Before the facts: type, call and stakes
 
 **Project type.** Record exactly one in `project_type`. Pick it with this decision order, by what the project does when it runs:
-1. Does its non-test code call Jev (F0)? If not: `guide` if it teaches building with Jev; `jev-alternative` if it answers Jev's kind of questions in Jev's place.
+1. Does its non-test code call Jev (F0)? If not: `guide` if it teaches building with Jev; `jev-replacement` if it answers Jev's kind of questions in Jev's place.
 2. Does its own code act on the answers? If yes: `workflow`. If it only shows them to a person: `demo`.
 3. Does it hand answers back to a caller? `agent-tool` if an agent calls it at run time; `library` if code imports it and it writes questions, wording or defaults; `client` if it passes questions through without writing any.
 
@@ -16,7 +16,7 @@ A project that does two of these is typed by what it does when it runs. jevify b
 - `client`: an SDK, client, proxy or gateway that passes questions through without writing any. F1-F3, F5-F11, F13 and F20-F22 are n.a. Rate F0, F4 (it can send batched requests), F12 (it lets callers pin a version), F14 and F19 (it exposes the typed fields and probabilities). Execution and Fit use only those facts. Examples: typesafe-ai/typesafe-sdk-js, joshmn/typesafe-sdk, alterhq/typesafe-sdk-swift.
 - `agent-tool`: an MCP server, skill or plugin that gives an agent Jev judgments and returns the answers to it rather than acting on them. It may ship question templates, with the agent supplying the content. Rate the templates and guidance it ships. Its stakes come from what the tool itself does with an answer (usually returning it, so low), not from what the agent does next. Example: jev-mcp.
 - `demo`: a site, notebook or game that shows Jev's answers to people and acts no further. Every design fact applies, since people learn from demos. Stakes are low unless its code acts on an answer. Examples: Ask Jevs, JevTools.
-- `jev-alternative`: a model, local engine or adapter that answers Jev's kind of questions in Jev's place, instead of calling it. F0 is no by construction. Verdict 1, "Not a Jev integration", which says nothing about its quality, until its own track exists. Examples: Jev-Omni, jevmlx, jaredpalmer/kev, typesafe-ai/system-one-adapter-python.
+- `jev-replacement`: a model, local engine or adapter that answers Jev's kind of questions in Jev's place, instead of calling it. F0 is no by construction. Verdict 1, "Not a Jev integration", which says nothing about its quality, until its own track exists. Examples: Jev-Omni, jevmlx, jaredpalmer/kev, typesafe-ai/system-one-adapter-python.
 - `guide`: a skill, doc or post that teaches building with Jev and makes no Jev calls itself. F0 is n.a. and there's no verdict-1 gate. F1-F23 are judged on what it teaches and on its examples: wrong advice is a no, and a topic it doesn't cover goes under Coverage, never as a no. Stakes don't apply; wrong advice on F1-F6 weighs more than wrong advice elsewhere. Two extra facts: G1, every rule matches the TypeSafe page it cites (quote both); G2, its examples would pass F1-F6. Verdict 1 for a guide is "Misleading guide": its core advice (F1-F6) is wrong. Examples: dbreunig/building-with-jev-skill, jevaluate, jevaluate-harness.
 
 **F0 Calls hosted Jev.** Yes only with a traced request: a `file:line` in non-test source that constructs a TypeSafe client, posts to `api.typesafe.ai`, or names a gateway model ID (`typesafe/jev-...`). For a hosted site whose server code isn't public, a captured network response that contains the Jev request (state and questions) and its typed answers also traces the call; cite the capture. None of these is a trace: the project's name, its README, keywords, docs, test fixtures, an adapter that imitates Jev's API, or `jev_callsites.py` mentions. F0 no means verdict 1.
@@ -102,6 +102,6 @@ The improvement loop: **evaluate** on labels, then **calibrate** (change the num
 - **2 Rework it:** Execution 1 or 0, or a fatal flaw: F1 fails on the main decision, F6 fails (Jev computes values), or confidence is ignored on a high-stakes action.
 - **1, labeled one of two ways.** F0 is no, or Jev's answers drive nothing (not even what a user is shown).
   - **False marketing: Jev in name only:** the project claims to use or call Jev (README, listing, model card), and F0 is no. Quote the claim; say nothing about intent.
-  - **Not a Jev integration:** it never claims to call Jev (a `jev-alternative` that says it answers in Jev's place, for example), or it calls Jev and the answers drive nothing.
+  - **Not a Jev integration:** it never claims to call Jev (a `jev-replacement` that says it answers in Jev's place, for example), or it calls Jev and the answers drive nothing.
 - **Can't rate yet** (`cant-rate` in the rating file): depth is readme-only, or the Jev code isn't public.
 - A project with misleading claims (Evidence 0 while claiming results) can't score above 3.

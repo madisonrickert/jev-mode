@@ -5,7 +5,7 @@ Rate one project. Work through the phases in order; each phase's output goes int
 ## 1. Intake
 Record: project name, URL, **owner** (the GitHub owner, or the publisher of a post), today's date, and the **commit or version rated** (`git ls-remote <url> HEAD`, or the post's date). A rating without a commit can't be compared later.
 
-Then record the **project type** (`rubric.md`, "Before the facts"): exactly one of `workflow`, `library`, `client`, `agent-tool`, `demo`, `jev-alternative`, `guide`, picked with its decision order. Decide it from what the code does, not from what the README calls it.
+Then record the **project type** (`rubric.md`, "Before the facts"): exactly one of `workflow`, `library`, `client`, `agent-tool`, `demo`, `jev-replacement`, `guide`, picked with its decision order. Decide it from what the code does, not from what the README calls it.
 
 ## 2. Read
 - `python3 scripts/coverage_manifest.py <owner/repo> <tmpdir>` writes `manifest.md` (every file that could hold Jev calls, decisions or evaluation), `meta.json` and the files themselves in `files/`. Read every file in the manifest that could change a fact or the verdict, and list each one in the rating's `## Coverage` section as `read` or `skipped: <reason>` (a binary, a lockfile, a generated file). `library.py check` refuses a rating whose Coverage leaves out a manifest file. Copy the manifest into the evidence folder with `library.py add --evidence <tmpdir>`.
@@ -62,7 +62,7 @@ url: <url>
 owner: <github owner>
 rated: YYYY-MM-DD
 rubric: 2026-09-28b   # the version in rubric.md's Verdict anchors heading
-project_type: workflow | library | client | agent-tool | demo | jev-alternative | guide
+project_type: workflow | library | client | agent-tool | demo | jev-replacement | guide
 rater: <model id>   # e.g. claude-sonnet-5-5
 effort: medium | high
 commit: <sha or version>
