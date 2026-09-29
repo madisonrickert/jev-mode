@@ -1,4 +1,4 @@
-# Jevaluate Maintain
+# Jevaluate Harness
 
 Runs [Jevaluate](../jevaluate/) over many projects at once, tests a rubric change before it ships, and publishes the ratings.
 
@@ -32,7 +32,7 @@ Needs Claude Code, Python 3.8+, the GitHub CLI (`gh`, logged in) and Jevaluate i
 
 ```
 git clone https://github.com/tiffygk/jev-mode
-cp -r jev-mode/jevaluate jev-mode/jevaluate-maintain ~/.claude/skills/
+cp -r jev-mode/jevaluate jev-mode/jevaluate-harness ~/.claude/skills/
 ```
 
 Set `$PRIVATE_TERMS` to your file of never-publish regexes (see the skill's Settings). Then ask Claude Code: `run a jevaluate re-rate round`.

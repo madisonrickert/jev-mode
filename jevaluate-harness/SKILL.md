@@ -1,5 +1,5 @@
 ---
-name: jevaluate-maintain
+name: jevaluate-harness
 description: Use when running a jevaluate rating round, re-rating after a rubric change, changing the jevaluate rubric, running its judgment eval, or publishing ratings to the jev-mode ratings folder.
 ---
 
