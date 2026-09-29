@@ -188,6 +188,8 @@ def check_doc_links(f, t, err):
         if not any(DOC_LINK.search(l) for l in entry):
             err.append(f"F{n} is no but has no TypeSafe docs link on its line or in its Core fixes entry (e.g. docs.typesafe.ai/primitives.md; --link-docs fills it from fix-catalog.md)")
 
+PROCESS_NOTE = re.compile(r"\bsecond pass\b|\bfirst version of this rating\b|\b(?:added|raised|lowered|changed) in (?:a|the) revision\b|\brevision of \d{4}-\d\d-\d\d\b|\blabel updated\b|\brating library\b|\b(?:in|from) (?:this|the|my) library so far\b|\bI (?:kept|used|chose|went with)\b", re.I)
+
 WARNINGS = []
 
 def check(src, evidence=None, text=None):
@@ -198,6 +200,9 @@ def check(src, evidence=None, text=None):
     check_coverage(t, d, pathlib.Path(evidence) if evidence else evidence_dir_for(p), err, WARNINGS)
     if d.get("rubric") and d["rubric"].split()[0] < RUBRIC: err.append(f"rubric {d['rubric']} is older than {RUBRIC}; rate with the current rubric")
     if "not recorded" in d.get("commit", ""): err.append("commit not recorded")
+    body = t.split("## Coverage")[0]
+    for m in PROCESS_NOTE.finditer(body):
+        err.append(f"process note '{m.group(0)}': a rating states findings only; cut revision history, first-person rater choices and references to other ratings or the library")
     v = d.get("verdict", "").split()[0] if d.get("verdict") else ""
     if v == "cant-rate": return err
     f = facts(t)
@@ -314,15 +319,51 @@ def fact_rows(t):
         if m: rows.append((int(m.group(1)), m.group(2).strip(" *"), m.group(3).lower().replace("n/a", "n.a."), m.group(4).strip()))
     return rows
 
+ABBREV = re.compile(r"(?:\b(?:e\.g|i\.e|vs|etc|cf|approx|no|fig)\.|\b[A-Z]\.)$", re.I)
+
+def sentences(s):
+    """Split prose into sentences, never inside quotes, parentheses or code, nor after e.g./i.e."""
+    s = s.replace("\n", " "); out, cur, depth, quote, code = [], "", 0, False, False
+    for i, ch in enumerate(s):
+        cur += ch
+        if ch == "`": code = not code
+        elif code: continue
+        elif ch in "\u201c\u201d" or ch == '"':
+            quote = (not quote) if ch == '"' else (ch == "\u201c")
+            if not quote and depth == 0 and len(cur) > 1 and cur[-2] in ".!?" and (i + 1 == len(s) or s[i + 1] == " "):
+                out.append(cur.strip()); cur = ""
+        elif ch in "([": depth += 1
+        elif ch in ")]": depth = max(0, depth - 1)
+        elif ch in ".!?" and not quote and depth == 0 and (i + 1 == len(s) or s[i + 1] == " ") and not ABBREV.search(cur.strip()):
+            out.append(cur.strip()); cur = ""
+    if cur.strip(): out.append(cur.strip())
+    return [x for x in out if x]
+
+IMPERATIVE = re.compile(r"^(?:add|ask|average|batch|call|cap|change|check|combine|compare|default|drop|fold|gate|give|include|keep|label|log|make|measure|move|pass|pin|point|put|randomize|record|remove|replace|rewrite|route|run|score|send|set|split|test|treat|use|wrap|write)\b", re.I)
+
+def top_fix(fix):
+    """The first instruction in a Core fixes entry, without its bold heading or fact prefix."""
+    body = re.sub(r"^\*\*[^*]+\*\*\s*(?:\([^)]*\)\.?\s*)?", "", fix.strip())
+    body = re.sub(r"^\**F\d+(?:/F\d+)*\**\s*[:,\u2014-]\s*", "", body)
+    ss = [x for x in sentences(body) if not x.startswith(("**(", "Source:", "Sources:"))]
+    pick = next((x for x in ss if IMPERATIVE.match(x)), ss[0] if ss else "")
+    return pick[:1].upper() + pick[1:] if pick else ""
+
 def linkify(text, d):
-    """file:line refs become links to the project at its rated commit; docs slugs become TypeSafe links."""
+    """file:line refs (and ',140' or backticked ':40' follow-ons) link to the project at its rated commit; docs slugs link to TypeSafe."""
     url, commit = d.get("url", "").rstrip("/"), d.get("commit", "").split()[0] if d.get("commit") else ""
-    if re.match(r"https://github\.com/[^/]+/[^/]+$", url) and re.fullmatch(r"[0-9a-f]{7,40}", commit):
+    if re.match(r"https://(?:github\.com|huggingface\.co)/[^/]+/[^/]+$", url) and re.fullmatch(r"[0-9a-f]{7,40}", commit):
+        def link(path, a, b):
+            return f"[`{path}:{a}{'-' + b if b else ''}`]({url}/blob/{commit}/{path}#L{a}" + (f"-L{b}" if b else "") + ")"
+        last, end = [None], [-9]
         def ln(m):
-            path, a, b = m.group("p"), m.group("a"), m.group("b")
-            anchor = f"#L{a}" + (f"-L{b}" if b else "")
-            return f"[`{path}:{a}{'-' + b if b else ''}`]({url}/blob/{commit}/{path}{anchor})"
-        text = re.sub(r"(?<!\[)`?(?P<p>[\w./-]+\.(?:" + CODE_EXT + r")):(?P<a>\d+)(?:-(?P<b>\d+))?`?", ln, text)
+            if m.group("n2") and m.start() != end[0] + 2: return m.group(0)  # a bare `N` links only right after a ref
+            if m.group("p"): last[0] = m.group("p")
+            if not last[0]: return m.group(0)
+            end[0] = m.end()
+            nums = re.findall(r"(\d+)(?:-(\d+))?", m.group("n") or m.group("n2"))
+            return ", ".join(link(last[0], a, b) for a, b in nums)
+        text = re.sub(r"(?<!\[)(?:`?(?P<p>[\w./-]+\.(?:" + CODE_EXT + r"))|`(?=:\d))\:(?P<n>\d+(?:-\d+)?(?:,\s*\d+(?:-\d+)?)*)`?|(?<=`, )`(?P<n2>\d+(?:-\d+)?)`", ln, text)
     return DOC_SLUG.sub(lambda m: f"[`{m.group(1)}`](https://docs.typesafe.ai/{m.group(1)})", text)
 
 def cell(x): return x.replace("|", "/").replace("\n", " ")
@@ -361,9 +402,9 @@ def export_pages(p):
     scores = " · ".join(f"{k.capitalize()} {dots(sc.get(k, ''))}" for k in ("execution", "fit", "coverage", "evidence"))
     stale = [f"*Rated under an earlier rubric ({r or 'unrecorded'}). A re-rating is queued.*", ""] if r < RUBRIC else []
     rows = fact_rows(t); summ = section(t, "Summary").strip()
-    sentences = [x.strip() for x in re.split(r"(?<=[.!?])\s+", summ.replace("\n", " ")) if x.strip()][:3]
+    summ_lines = sentences(summ)[:3]
     fixes = [re.sub(r"^\d+\.\s*", "", l).strip() for l in section(t, "Core fixes").splitlines() if re.match(r"^\d+\.", l.strip())]
-    top = re.sub(r"^\**F\d+[^,:]*?\**[,:]\s*", "", fixes[0]).split(". ")[0].rstrip(".") + "." if fixes else ""
+    top = top_fix(fixes[0]) if fixes else ""
     failing = [x for x in rows if x[2] in ("no", "unknown")]
     major = [x for x in failing if not minor_fact(x[0], x[3], x[1])]
     minor = [x for x in failing if minor_fact(x[0], x[3], x[1])]
@@ -371,7 +412,7 @@ def export_pages(p):
     L = lambda x: linkify(x, d)
     detail = ["[← All ratings](README.md)", ""] + stale + [
         f"> **{who}** {at}" + (f" · {ptype}" if ptype else ""), f"> ### Verdict {v}: {label}", f"> {scores}", ">"]
-    detail += [f"> - {L(x)}" for x in sentences]
+    detail += [f"> - {L(x)}" for x in summ_lines]
     if top: detail += [">", f"> **Top fix:** {L(top)}"]
     detail += ["", "## What holds it back", ""] + ([f"- **{n_}** ({'F%d' % n}): {L(f)}" for n, n_, _, f in major] or ["Nothing that lowers the verdict."])
     if tested.strip(): detail += ["", "## Tested here", "", L(tested.strip())]
@@ -379,7 +420,7 @@ def export_pages(p):
         detail += ["", "## Fixes (from reading the code; not tested against it)", ""] + [f"{i}. {L(x)}" for i, x in enumerate(fixes[:3], 1)]
     if minor: detail += ["", "**Minor:** " + "; ".join(f"{n_} (F{n})" for n, n_, _, _ in minor) + ". These are listed fixes and don't lower the verdict."]
     detail += ["", f"[Full rating: every fact, its evidence and the files read →](full/{slug}.md)", ""]
-    head = f"**Verdict {v}, {label}**" + (f" · {ptype}" if ptype else "") + f" · rated {d.get('rated', '')} {at} · read: {d.get('depth', '').split()[0] if d.get('depth') else ''} · rubric {r or 'unrecorded'} · {d.get('rater', 'rater unrecorded')}" + (f", {d['effort'].split()[0]} effort" if d.get("effort") else "")
+    head = f"**Verdict {v}, {label}**" + (f" · {ptype}" if ptype else "") + f" · rated {d.get('rated', '')} {at} · read: {d.get('depth', '').split()[0] if d.get('depth') else ''} · rubric {r or 'unrecorded'}{' (earlier)' if stale else ''} · {d.get('rater', 'rater unrecorded')}" + (f", {d['effort'].split()[0]} effort" if d.get("effort") else "")
     full = [f"[← Summary](../{slug}.md)", "", f"# {d.get('project', slug)}: full rating", "", head, ""] + stale + ["## Summary", "", L(summ), "",
             "## What fails", "", "| Fact | Finding |", "|---|---|"]
     full += [f"| {cell(n_)} (F{n}) | **{val}.** {cell(L(f))} |" for n, n_, val, f in rows if n == 0 or val in ("no", "unknown")]

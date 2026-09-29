@@ -567,3 +567,58 @@ def test_export_verdict_one_uses_the_rating_label(tmp_path, lib):
     assert run(lib, "add", str(r)).returncode == 0, "fixture"
     out = tmp_path / "out"; assert run(lib, "export", str(out)).returncode == 0
     assert "Verdict 1: Not a Jev integration" in (out / "o__imit.md").read_text()
+
+
+# --- Export text quality (2026-09-28, Lane P review) ---
+
+def _export_one(tmp_path, lib, **kw):
+    d = lib / "projects" / "o__p"; d.mkdir(parents=True)
+    kw.setdefault("url", "https://github.com/o/p")
+    make_rating(d / "2026-09-28.md", "P", "o", kw.pop("url"), "2026-09-28", **kw)
+    out = tmp_path / "out"
+    r = run(lib, "export", str(out)); assert r.returncode == 0, r.stderr
+    return (out / "o__p.md").read_text(), (out / "full" / "o__p.md").read_text()
+
+
+def test_export_summary_does_not_split_inside_quotes_or_eg(tmp_path, lib):
+    summ = 'It keeps a ledger. Its rule is "Facts go to code. Judgments go to Jev." It blocks turns (e.g. a Stop hook) when a check fails.'
+    page, _ = _export_one(tmp_path, lib, summary=summ)
+    assert '> - Its rule is "Facts go to code. Judgments go to Jev."' in page
+    assert "> - It blocks turns (e.g. a Stop hook) when a check fails." in page
+
+
+def test_export_top_fix_is_the_first_instruction(tmp_path, lib):
+    fixes = '1. **F22 — untrusted text not treated as data.** The diff text is risky. Add an injection check (e.g. "ignore this") before ranking. **(confirm with data.)** Source: `primitives`.'
+    page, _ = _export_one(tmp_path, lib, core_fixes=fixes)
+    assert '**Top fix:** Add an injection check (e.g. "ignore this") before ranking.' in page
+
+
+def test_export_top_fix_drops_fact_prefix(tmp_path, lib):
+    page, _ = _export_one(tmp_path, lib, core_fixes="1. F1: split `q` into two questions; combine in code.")
+    assert "**Top fix:** Split `q` into two questions; combine in code." in page
+
+
+def test_export_links_every_line_in_a_list_and_bare_follow_ons(tmp_path, lib):
+    fl = {4: "- F4 batching — yes. One request (`src/a.ts:131,140`); again at `src/b.ts:12`, `:40-42`, `50-51`; threshold `3`."}
+    _, full = _export_one(tmp_path, lib, fact_lines=fl)
+    assert "src/a.ts#L140)" in full and "src/b.ts#L40-L42)" in full and "src/b.ts#L50-L51)" in full and "threshold `3`" in full
+    assert ",140`" not in full and "`:40-42`" not in full
+
+
+def test_export_links_huggingface_refs(tmp_path, lib):
+    fl = {6: "- F6 check — yes. Threshold at `jev_omni.py:108`."}
+    _, full = _export_one(tmp_path, lib, url="https://huggingface.co/o/p", fact_lines=fl)
+    assert "(https://huggingface.co/o/p/blob/abc123def456789/jev_omni.py#L108)" in full
+
+
+def test_export_header_marks_earlier_rubric(tmp_path, lib):
+    _, full = _export_one(tmp_path, lib, rubric="2026-09-01")
+    assert "rubric 2026-09-01 (earlier)" in full
+
+
+@pytest.mark.parametrize("note", ["second pass closed the gaps", "Raised from 1 in the first version of this rating",
+                                  "the strongest evidence file in this rating library", "I kept 2 because the anchors are silent"])
+def test_check_refuses_process_notes(tmp_path, lib, note):
+    r = make_rating(tmp_path / "r.md", "P", "o", "https://github.com/o/p", "2026-09-28", summary="Fine. " + note + ".")
+    res = run(lib, "check", str(r))
+    assert res.returncode != 0 and "process note" in (res.stdout + res.stderr)
