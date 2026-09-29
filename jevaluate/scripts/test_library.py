@@ -609,6 +609,7 @@ def test_export_links_huggingface_refs(tmp_path, lib):
     fl = {6: "- F6 check — yes. Threshold at `jev_omni.py:108`."}
     _, full = _export_one(tmp_path, lib, url="https://huggingface.co/o/p", fact_lines=fl)
     assert "(https://huggingface.co/o/p/blob/abc123def456789/jev_omni.py#L108)" in full
+    assert "at [`abc123d`](https://huggingface.co/o/p/tree/abc123def456789)" in full and "[https://" not in full
 
 
 def test_export_header_marks_earlier_rubric(tmp_path, lib):

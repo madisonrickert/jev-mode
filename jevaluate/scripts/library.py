@@ -394,7 +394,7 @@ def export_pages(p):
     slug = p.parent.name; label = verdict_label(t, v)
     who = f"{d.get('owner', '')}/{d.get('project', slug)}" if "github.com" in d.get("url", "") else d.get("project", slug)
     commit = d.get("commit", "").split()[0] if d.get("commit") else ""
-    at = (f"at [`{commit[:7]}`]({d['url'].rstrip('/')}/tree/{commit})" if re.fullmatch(r"[0-9a-f]{7,40}", commit) and "github.com" in d.get("url", "")
+    at = (f"at [`{commit[:7]}`]({d['url'].rstrip('/')}/tree/{commit})" if re.fullmatch(r"[0-9a-f]{7,40}", commit) and re.search(r"github\.com|huggingface\.co", d.get("url", ""))
           else f"[{d.get('url', '')}]({d.get('url', '')}), {d.get('commit', '')}")
     ptype = d.get("project_type", "").split()[0] if d.get("project_type") else ""
     ptype = "" if ptype in ("", "unrecorded") else ptype.replace("-", " ")
