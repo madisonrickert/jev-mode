@@ -35,7 +35,7 @@ Send any verdict move of 2 or more points, and any rubric line a rater called am
 ## 7. Publish
 1. Give every rating a `why:` line (20 words at most).
 2. Run `library.py export <preview dir>`; render it and read the index, a detail page and a full page.
-3. Have a fresh reviewer subagent read every page for private context: anything crediting a private conversation, names used without consent.
+3. Have a fresh reviewer subagent read every page for private context (anything crediting a private conversation, people named other than by their GitHub or Hugging Face handle), rater process notes, and broken or unlinked `file:line` references. Brief it to skip hedging and tone suggestions.
 4. Check the README's claims against the skill's current files.
 5. Export into `ratings/`, run a GitHub readiness audit, push once.
 
