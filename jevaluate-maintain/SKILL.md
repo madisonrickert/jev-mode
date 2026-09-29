@@ -14,28 +14,28 @@ Companion to `jevaluate` (`jevaluate/read.md` covers one rating). This file cove
 Run `python3 jevaluate/scripts/screen_list.py <list README> --known-yes <repo that calls Jev> --known-no <repo that doesn't>`; it stops if either control is misclassified. Quote counts from its output, never by eye. Never classify repos with GitHub code search.
 
 ## 2. Size before spending
-Run `python3 jevaluate/scripts/coverage_manifest.py <owner/repo> <dir>` for every project. Budget 45k plus the `~N tokens` on its first line. Above 150k, agree a scoped rating (the files with the Jev calls, questions and decisions) with the user before dispatch.
+Run `python3 jevaluate/scripts/coverage_manifest.py <owner/repo> <dir>` for every project and apply `read.md`'s cost rule (section 2) to each. Sum the estimates and agree the total, and every scoped rating, with the user before dispatch; an unattended rater can't ask.
 
 ## 3. Brief raters
-Give each rater `rater-brief.md`: own folder only, facts written before reading the old rating, no `library.py add`, commit or push.
+Give each rater `rater-brief.md`, filling PROJECT, SLUG, PREV (the previous rating file), VIA and SCOPE, and changing its paths if your jevaluate install or round folder differs: own folder only, facts written before reading the old rating, no `library.py add`, commit or push.
 
 ## 4. Log one at a time
 As controller, run `python3 jevaluate/scripts/library.py add <rating> --evidence <dir> --link-docs` for one rating at a time, since `add` rebuilds the shared index and numbers same-day files. Send a refused rating back to its rater; never hand-fix it. Keep a ledger: project, verdict, tokens, flags.
 
 ## 5. Adjudicate
-Send any verdict move of 2 or more points, and any rubric line a rater called ambiguous, to a `reviewer` given only the facts. Answer "what would X get?" from that re-verdict, never from memory.
+Send any verdict move of 2 or more points, and any rubric line a rater called ambiguous, to a fresh reviewer subagent given only the facts. Answer "what would X get?" from that re-verdict, never from memory.
 
 ## 6. Calibrate
 - Run the judgment eval (`jevaluate/evals/`, see its README) before and after any rubric change. Tune only on tuning-set failures, never on held-out cases.
 - When raters disagree on a fact across re-rates, tighten that fact's anchor, then re-run the eval.
 - Test wording with `claude -p --setting-sources "" --strict-mcp-config --tools "" --system-prompt-file <f> --model <m> --effort <e> --output-format json < prompt.md` (`--bare` fails on OAuth logins). Agent token logs miss these calls; add each call's `usage` to your spend.
 - Measure a cheaper rating mode on one real repo before building it. A quick mode measured at 78k tokens left 10 of 24 facts unknown and was dropped.
-- Record each round's findings in `jevaluate/CALIBRATION.md`.
+- Record each round's findings in `jevaluate/CALIBRATION.md` (create it if missing).
 
 ## 7. Publish
 1. Give every rating a `why:` line (20 words at most).
 2. Run `library.py export <preview dir>`; render it and read the index, a detail page and a full page.
-3. Have a reviewer read every page for private context: anything crediting a private conversation, names used without consent.
+3. Have a fresh reviewer subagent read every page for private context: anything crediting a private conversation, names used without consent.
 4. Check the README's claims against the skill's current files.
 5. Export into `ratings/`, run a GitHub readiness audit, push once.
 
