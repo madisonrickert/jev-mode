@@ -39,7 +39,7 @@ Each dimension scores 0 to 3. The verdict comes from these rules, never an avera
 ## How it works
 
 1. Pins the commit, fetches every file that could change the verdict, and tells you what the rating will cost. Above 200k tokens it asks before going on.
-2. Traces the request that proves the project calls Jev, names the project type (app, library, agent tool, demo and so on), then counts questions, thresholds and model pinning.
+2. Traces the request that proves the project calls Jev, names the project type (workflow, library, agent tool, demo and so on), then counts questions, thresholds and model pinning.
 3. If the project remixes a TypeSafe cookbook, checks it against the original: what it kept, what it dropped.
 4. Answers 24 facts, each yes, no, n.a. or unknown, citing a file:line or quote. Each decision gets a stakes level, so a flaw costs more where a wrong answer touches money, personal data or access.
 5. Scores four dimensions and sets the verdict. A checker script rejects any verdict the facts don't allow.
