@@ -3,7 +3,7 @@ name: jevaluate-harness
 description: Use when running a jevaluate rating round, re-rating after a rubric change, changing the jevaluate rubric, running its judgment eval, or publishing ratings to the jev-mode ratings folder.
 ---
 
-# Jevaluate: maintaining the ratings
+# Jevaluate Harness
 
 Companion to `jevaluate` (`jevaluate/read.md` covers one rating). This file covers rounds and the rubric.
 
