@@ -6,6 +6,7 @@ Claude Code skills for building with Jev, TypeSafe's System One model.
 |---|---|---|
 | [Jevaluate](jevaluate/) | Reads a Jev project's code and rates how well it uses Jev, with provenance for every finding | Available |
 | [Jev Lens](jev-lens/) | Turns images into a neutral JSON state that Jev can read, one shared schema across the set | Available |
+| [Jevaluate Maintain](jevaluate-maintain/) | Runs rating rounds, re-rates and rubric calibration for Jevaluate | Available |
 
 Install a skill by copying its folder into `~/.claude/skills/`:
 
