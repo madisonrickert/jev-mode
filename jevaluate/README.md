@@ -61,7 +61,7 @@ The full list, with the TypeSafe source behind each rule, is in [`rubric.md`](ru
 
 ## Every score shows its work
 
-- **Rules from the source:** every rule and fix cites TypeSafe's docs or one of its 18 cookbooks, dated, in `jev-rules.md`. The few rules that come from rating experience instead are marked as the skill's own. An unhandled Choice order, for example, gets its fix from TypeSafe's consistency cookbook.
+- **Rules from the source:** every rule and fix cites TypeSafe's docs or one of its 18 cookbooks, dated, in [`jev-rules.md`](../shared/jev-rules.md), which Jevaluate and Jev Lens share. The few rules that come from rating experience instead are marked as the skill's own, in `rubric.md`. An unhandled Choice order, for example, gets its fix from TypeSafe's consistency cookbook.
 - **Scores cite their facts:** each score names the rule it meets and the facts behind it.
 - **Claims get checked:** Evidence earns full marks only with a stated sample, independent labels, a held-out set and a fair baseline.
 

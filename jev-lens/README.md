@@ -57,7 +57,7 @@ Reuse a run's package on a similar set to skip calibration.
 
 ## Where the rules come from
 
-Every rule cites TypeSafe's docs or cookbooks, dated, in `jev-rules.md`. The certainty tags follow the date-extraction cookbook: a combined value is as certain as its weakest part.
+Every rule cites TypeSafe's docs or cookbooks, dated, in [`jev-rules.md`](../shared/jev-rules.md), shared with Jevaluate. The certainty tags follow the date-extraction cookbook: a combined value is as certain as its weakest part.
 
 ## Install and use
 

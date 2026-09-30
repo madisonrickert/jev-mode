@@ -9,7 +9,7 @@ Rates how well something uses Jev, TypeSafe's System One model (typed questions 
 
 ## How to rate
 
-Follow `read.md`, with `rubric.md`, `fix-catalog.md` and `jev-rules.md`. Jevaluate rates projects; it doesn't run or diagnose your own pipeline. If asked for that, say so and stop.
+Follow `read.md`, with `rubric.md`, `fix-catalog.md` and `../shared/jev-rules.md` (shared with Jev Lens). Jevaluate rates projects; it doesn't run or diagnose your own pipeline. If asked for that, say so and stop.
 
 ## Model
 
