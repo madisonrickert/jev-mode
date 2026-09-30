@@ -84,7 +84,7 @@ Ratings of community projects are in [`ratings/`](../ratings/), under CC0.
 
 Jevaluate runs entirely on an LLM and doesn't call Jev to make its ratings. That's by design: not everyone using it has a TypeSafe API key, and the best ways to design Jev's state and questions are still being worked out. A Jev-powered Jevaluate will follow once there's a solid baseline of LLM ratings to compare it against.
 
-Jevaluate reads public repos; it doesn't run them. Diagnose mode, which finds root causes in your own pipeline on your own data, isn't included yet. Not affiliated with TypeSafe.
+Jevaluate reads public repos; it doesn't run them. Not affiliated with TypeSafe.
 
 ## License
 

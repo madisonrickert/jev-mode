@@ -1,20 +1,15 @@
 ---
 name: jevaluate
-description: Use when rating whether a project, repo, skill, workflow, plugin, agent product or post uses TypeSafe's Jev (System One) model well -- "is this a good use of Jev?", "rate this Jev integration", "jevaluate <url>", or a link to something named after Jev. Also use to check whether something that calls itself Jev actually uses it. Read mode rates, logs the rating to a private library, and lists design fixes; it never edits the project.
+description: Use when rating whether a project, repo, skill, workflow, plugin, agent product or post uses TypeSafe's Jev (System One) model well -- "is this a good use of Jev?", "rate this Jev integration", "jevaluate <url>", or a link to something named after Jev. Also use to check whether something that calls itself Jev actually uses it. It rates, logs the rating to a private library, and lists design fixes; it never edits the project.
 ---
 
 # Jevaluate
 
 Rates how well something uses Jev, TypeSafe's System One model (typed questions over a JSON `state`, answered in parallel with calibrated probabilities). Every rating is evidence-backed, dated, tied to a commit, and logged, so the library of past ratings anchors future ones.
 
-## Pick the mode
+## How to rate
 
-| Asked for | Mode | Open |
-|---|---|---|
-| Rate a project, repo, skill, workflow, product or post | **read** | `read.md` (with `rubric.md`, `fix-catalog.md` and `jev-rules.md`) |
-| Diagnose your own Jev pipeline on your own data | **diagnose** | `diagnose.md` -- not included in this version; say so and stop |
-
-Read only the file for the chosen mode.
+Follow `read.md`, with `rubric.md`, `fix-catalog.md` and `jev-rules.md`. Jevaluate rates projects; it doesn't run or diagnose your own pipeline. If asked for that, say so and stop.
 
 ## Model
 

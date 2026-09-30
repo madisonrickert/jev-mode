@@ -1,8 +1,8 @@
 # Jev Lens
 
-Jev Lens describes images for Jev, TypeSafe's text-only model, and hands back a JSON state for each image, all built on one shared schema.
+Jev Lens uses an LLM with good vision to decode images for Jev, TypeSafe's text-only model, and hands back a JSON state for each image, all built on one shared schema.
 
-Jev answers the state description it gets, so the decoders work blind to prevent bias ruining your dataset: they never learn what you suspect the image shows.
+In the Jev check step, Jev answers the state description it gets, so we need to prevent bias from the decoder llm context from leaking into the JSON state it writes. The decoder LLM agents work blind to prevent bias ruining your dataset, while calibration steps measure agreement between fresh decoding subagents to ensure consistency across a batch of iamges.
 
 | Situation | Use |
 |---|---|
@@ -72,7 +72,7 @@ Then ask Claude Code: `turn these photos into a Jev state`. Ten images take abou
 
 ## Limits
 
-It never states identity, age, gender or relationships unless you add them as labeled context. The question sketch only tests the state; you write the final questions. Only text goes to TypeSafe. Not affiliated with TypeSafe.
+It never states identity, age, gender or relationships unless you add them as labeled context. The question sketch only tests the state; you write the final questions. Only text goes to TypeSafe. Not affiliated with TypeSafe. Current skill uses Opus 5.5 for the best vision and is designed for Claude Code, but can be easily edited for any harness that uses skills or to call a new model with good vision scores.
 
 ## License
 
