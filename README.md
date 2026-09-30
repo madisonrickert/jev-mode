@@ -36,15 +36,6 @@ codex plugin add jev-lens@jev-mode
 
 Pull later changes with `claude plugin marketplace update jev-mode` or `codex plugin marketplace upgrade jev-mode`.
 
-To install without the plugin system, copy a skill's folder into `~/.claude/skills/`:
-
-```
-git clone https://github.com/tiffygk/jev-mode
-cp -r jev-mode/jevaluate ~/.claude/skills/
-cp -r jev-mode/jev-lens ~/.claude/skills/
-cp -r jev-mode/jevaluate-harness ~/.claude/skills/
-```
-
 Any other coding harness that loads skills can run them with small changes.
 
 Ratings of community Jev projects are in [`ratings/`](ratings/), released under CC0: use and change them freely.
