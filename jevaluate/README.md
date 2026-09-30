@@ -69,7 +69,7 @@ The full list, with the TypeSafe source behind each rule, is in [`rubric.md`](ru
 
 Needs Claude Code or Codex, git, Python 3.8+ and the GitHub CLI (`gh`, logged in: the scripts read each repo's file tree through it). No Jev API key. Install the plugin from the marketplace: see [Install](../README.md#install).
 
-Then ask your agent: `jevaluate https://github.com/valentynkit/jev-belay`. Use a Sonnet-class model at medium effort every time, so ratings stay comparable; in Codex, pick one model and effort and keep them. A rating reads every file that could change its verdict, so it isn't cheap: about 45k tokens plus the size of those files, typically 100-160k for a small repo (measured in Claude Code). Ratings save to `~/.jevaluate-library/` (or `$JEVALUATE_LIBRARY`, or `~/.claude/jevaluate-library/` if you already have one there), never into the skill.
+Then ask your agent: `jevaluate https://github.com/valentynkit/jev-belay`. Use a Sonnet-class model at medium effort every time, so ratings stay comparable; in Codex, `gpt-6-luna` at medium effort. A rating reads every file that could change its verdict, so it isn't cheap: about 45k tokens plus the size of those files, typically 100-160k for a small repo (measured in Claude Code). Ratings save to `~/.jevaluate-library/` (or `$JEVALUATE_LIBRARY`, or `~/.claude/jevaluate-library/` if you already have one there), never into the skill.
 
 ## Published ratings
 

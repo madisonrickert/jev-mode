@@ -19,7 +19,7 @@ Run `python3 jevaluate/scripts/screen_list.py <list README> --known-yes <repo th
 Run `python3 jevaluate/scripts/coverage_manifest.py <owner/repo> <dir>` for every project and apply `read.md`'s cost rule (section 2) to each. Sum the estimates and agree the total, and every scoped rating, with the user before dispatch; an unattended rater can't ask.
 
 ## 3. Brief raters
-Give each rater `rater-brief.md`, filling PROJECT, SLUG, PREV (the previous rating file), VIA, SCOPE, RATER (the rater's model ID) and JEVALUATE (the absolute path to the plugin's `jevaluate/` folder), and changing its paths if your round folder differs: own folder only, facts written before reading the old rating, no `library.py add`, commit or push.
+Give each rater `rater-brief.md`, filling PROJECT, SLUG, PREV (the previous rating file), VIA, SCOPE, RATER (the rater's model ID: `claude-sonnet-5-5` in Claude Code, `gpt-6-luna` in Codex) and JEVALUATE (the absolute path to the plugin's `jevaluate/` folder), and changing its paths if your round folder differs: own folder only, facts written before reading the old rating, no `library.py add`, commit or push.
 
 ## 4. Log one at a time
 As controller, run `python3 jevaluate/scripts/library.py add <rating> --evidence <dir> --link-docs` for one rating at a time, since `add` rebuilds the shared index and numbers same-day files. Send a refused rating back to its rater; never hand-fix it. Keep a ledger: project, verdict, tokens, flags.

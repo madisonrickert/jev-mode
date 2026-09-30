@@ -13,7 +13,7 @@ Follow `read.md`, with `rubric.md`, `fix-catalog.md` and `jev-rules.md`. Jevalua
 
 ## Model
 
-Run on a Sonnet-class model at medium effort, the same one every time: ratings stay comparable only if the rater doesn't change. In Codex or another harness, pick one model and effort and keep them. Record both in the rating (`rater`, `effort`); a rating by a different model is a different rater's.
+Run on a Sonnet-class model at medium effort, the same one every time: ratings stay comparable only if the rater doesn't change. In Codex, run on `gpt-6-luna` at medium effort. In another harness, pick one model and effort and keep them. Record both in the rating (`rater`, `effort`); a rating by a different model is a different rater's.
 
 ## Verdicts
 
